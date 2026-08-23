@@ -37,6 +37,17 @@ private val CoreBloomBrush = Brush.radialGradient(
     radius = 1f,
 )
 
+private val ErrorBloomBrush = Brush.radialGradient(
+    colorStops = arrayOf(
+        0f to Color(0xFFFFF0E8).copy(alpha = 0.90f),
+        0.18f to SiriRed.copy(alpha = 0.78f),
+        0.50f to Color(0xFFFF001F).copy(alpha = 0.36f),
+        1f to Color.Transparent,
+    ),
+    center = Offset.Zero,
+    radius = 1f,
+)
+
 private data class DiscPoint(
     val x: Float,
     val y: Float,
@@ -227,6 +238,8 @@ private val SurfaceSpecs = listOf(
 @Composable
 internal fun SiriSurfaceField(
     phaseState: State<Float>,
+    style: SiriOrbStyle,
+    audioLevel: Float,
     modifier: Modifier = Modifier,
 ) {
     val positions = remember {
@@ -244,23 +257,38 @@ internal fun SiriSurfaceField(
 
     Canvas(modifier) {
         val phase = phaseState.value
-        val radius = size.minDimension * 0.47f
+        val voiceWave = (
+            0.55f +
+                0.28f * sin(phase * 7f + 0.2f) +
+                0.17f * sin(phase * 11f + 1.4f)
+            ).coerceIn(0f, 1f)
+        val pulse = style.pulseAmount * audioLevel * voiceWave
+        val radius = size.minDimension * 0.47f * style.sizeScale * (1f + pulse * 0.075f)
         val core = Offset(
-            x = center.x + radius * 0.018f * sin(phase * 2f + 0.4f),
-            y = center.y + radius * 0.022f * cos(phase * 3f - 0.2f),
+            x = center.x + radius * 0.018f * style.motionScale * sin(phase * 2f + 0.4f),
+            y = center.y + radius * 0.022f * style.motionScale * cos(phase * 3f - 0.2f),
         )
         SurfaceSpecs.forEachIndexed { index, spec ->
+            val colorWeight = when (spec.color) {
+                SiriRed -> style.redWeight
+                SiriBlue -> style.blueWeight
+                else -> style.tealWeight
+            }
             drawSurfaceMesh(
                 spec = spec,
-                pose = spec.poseAt(phase),
+                pose = spec.poseAt(phase, style.motionScale),
                 positions = positions[index],
                 colors = colors[index],
                 core = core,
                 radius = radius * spec.scale,
+                opacityScale = style.opacityScale * colorWeight,
+                colorGain = 0.86f + 0.14f * colorWeight,
                 paint = paint,
             )
         }
-        val bloomRadius = radius * (0.36f + 0.018f * sin(phase * 3f + 0.4f))
+        val bloomRadius = radius * style.bloomScale * (
+            0.36f + 0.018f * sin(phase * 3f + 0.4f) + pulse * 0.07f
+        )
         withTransform({
             translate(core.x, core.y)
             scale(bloomRadius, bloomRadius, pivot = Offset.Zero)
@@ -269,22 +297,30 @@ internal fun SiriSurfaceField(
                 brush = CoreBloomBrush,
                 center = Offset.Zero,
                 radius = 1f,
+                alpha = style.bloomAlpha * (1f - style.errorAmount),
+                blendMode = BlendMode.Screen,
+            )
+            drawCircle(
+                brush = ErrorBloomBrush,
+                center = Offset.Zero,
+                radius = 1f,
+                alpha = style.bloomAlpha * style.errorAmount,
                 blendMode = BlendMode.Screen,
             )
         }
     }
 }
 
-private fun SurfaceSpec.poseAt(phase: Float): SurfacePose {
+private fun SurfaceSpec.poseAt(phase: Float, motionScale: Float): SurfacePose {
     val local = phase + phaseOffset
     return SurfacePose(
-        rotationX = rotationX + rotationXRange * sin(local),
-        rotationY = rotationY + rotationYRange * sin(local + 0.73f),
-        rotationZ = rotationZ + rotationZRange * sin(local * 2f + 0.21f),
-        twistX = twistX + 12f * sin(local * 1.5f + 1.1f),
-        twistY = twistY + 20f * sin(local + 1.83f),
-        bend = bend + bendRange * sin(local * 2f + 0.82f),
-        bendDirection = bendDirection + 20f * sin(local + 1.37f),
+        rotationX = rotationX + rotationXRange * motionScale * sin(local),
+        rotationY = rotationY + rotationYRange * motionScale * sin(local + 0.73f),
+        rotationZ = rotationZ + rotationZRange * motionScale * sin(local * 2f + 0.21f),
+        twistX = twistX + 12f * motionScale * sin(local * 1.5f + 1.1f),
+        twistY = twistY + 20f * motionScale * sin(local + 1.83f),
+        bend = bend + bendRange * motionScale * sin(local * 2f + 0.82f),
+        bendDirection = bendDirection + 20f * motionScale * sin(local + 1.37f),
     )
 }
 
@@ -295,6 +331,8 @@ private fun DrawScope.drawSurfaceMesh(
     colors: MutableList<Color>,
     core: Offset,
     radius: Float,
+    opacityScale: Float,
+    colorGain: Float,
     paint: Paint,
 ) {
     val direction = pose.bendDirection * DegreesToRadians
@@ -407,11 +445,12 @@ private fun DrawScope.drawSurfaceMesh(
                 rim * 0.02f +
                 centerLight * (0.12f + rim * 0.28f)
             ).coerceIn(0f, 0.42f)
-        val alpha = spec.opacity * (0.80f + 0.20f * facing)
+        val alpha = (spec.opacity * opacityScale * (0.80f + 0.20f * facing))
+            .coerceIn(0f, 1f)
         colors[index] = Color(
-            red = (spec.color.red * shade + whiteMix).coerceIn(0f, 1f),
-            green = (spec.color.green * shade + whiteMix).coerceIn(0f, 1f),
-            blue = (spec.color.blue * shade + whiteMix).coerceIn(0f, 1f),
+            red = (spec.color.red * shade * colorGain + whiteMix).coerceIn(0f, 1f),
+            green = (spec.color.green * shade * colorGain + whiteMix).coerceIn(0f, 1f),
+            blue = (spec.color.blue * shade * colorGain + whiteMix).coerceIn(0f, 1f),
             alpha = alpha,
         )
     }
