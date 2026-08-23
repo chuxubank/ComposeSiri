@@ -137,8 +137,8 @@ private val SurfaceSpecs = listOf(
         rotationX = -87f,
         rotationY = 259f,
         rotationZ = -189f,
-        rotationXRange = 11f,
-        rotationYRange = 34f,
+        rotationXRange = 6f,
+        rotationYRange = 10f,
         rotationZRange = 94f,
         twistX = -7f,
         twistY = -21f,
@@ -150,7 +150,7 @@ private val SurfaceSpecs = listOf(
     ),
     SurfaceSpec(
         color = SiriBlue,
-        scale = 0.96f,
+        scale = 0.88f,
         rotationX = -29f,
         rotationY = 134f,
         rotationZ = 3.3f,
@@ -167,7 +167,7 @@ private val SurfaceSpecs = listOf(
     ),
     SurfaceSpec(
         color = SiriRed,
-        scale = 0.96f,
+        scale = 0.90f,
         rotationX = -16f,
         rotationY = 221f,
         rotationZ = 99f,
@@ -188,8 +188,8 @@ private val SurfaceSpecs = listOf(
         rotationX = 82f,
         rotationY = 14f,
         rotationZ = 164.4f,
-        rotationXRange = 14f,
-        rotationYRange = 34f,
+        rotationXRange = 6f,
+        rotationYRange = 10f,
         rotationZRange = 76f,
         twistX = 0f,
         twistY = -2f,
@@ -201,7 +201,7 @@ private val SurfaceSpecs = listOf(
     ),
     SurfaceSpec(
         color = SiriTeal,
-        scale = 0.93f,
+        scale = 0.86f,
         rotationX = 162f,
         rotationY = 14f,
         rotationZ = 305f,
@@ -222,8 +222,8 @@ private val SurfaceSpecs = listOf(
         rotationX = -82f,
         rotationY = 217f,
         rotationZ = 91f,
-        rotationXRange = 13f,
-        rotationYRange = 34f,
+        rotationXRange = 6f,
+        rotationYRange = 10f,
         rotationZRange = 80f,
         twistX = 7f,
         twistY = -30f,
@@ -263,7 +263,7 @@ internal fun SiriSurfaceField(
                 0.17f * sin(phase * 11f + 1.4f)
             ).coerceIn(0f, 1f)
         val pulse = style.pulseAmount * audioLevel * voiceWave
-        val radius = size.minDimension * 0.47f * style.sizeScale * (1f + pulse * 0.075f)
+        val radius = size.minDimension * 0.43f * style.sizeScale * (1f + pulse * 0.075f)
         val core = Offset(
             x = center.x + radius * 0.018f * style.motionScale * sin(phase * 2f + 0.4f),
             y = center.y + radius * 0.022f * style.motionScale * cos(phase * 3f - 0.2f),
@@ -287,7 +287,7 @@ internal fun SiriSurfaceField(
             )
         }
         val bloomRadius = radius * style.bloomScale * (
-            0.36f + 0.018f * sin(phase * 3f + 0.4f) + pulse * 0.07f
+            0.46f + 0.018f * sin(phase * 3f + 0.4f) + pulse * 0.07f
         )
         withTransform({
             translate(core.x, core.y)
@@ -339,8 +339,8 @@ private fun DrawScope.drawSurfaceMesh(
     val directionCos = cos(direction)
     val directionSin = sin(direction)
     val bendAmount = pose.bend * DegreesToRadians * 0.5f
-    val twistXAmount = sin(pose.twistX * DegreesToRadians) * 0.44f
-    val twistYAmount = sin(pose.twistY * DegreesToRadians) * 0.44f
+    val twistXAmount = pose.twistX * DegreesToRadians * 0.72f
+    val twistYAmount = pose.twistY * DegreesToRadians * 0.72f
 
     val rotationX = pose.rotationX * DegreesToRadians
     val rotationY = pose.rotationY * DegreesToRadians
@@ -374,26 +374,18 @@ private fun DrawScope.drawSurfaceMesh(
             bentDepthDerivative = angleSin
         }
 
-        val surfaceX = bentAlong * directionCos - across * directionSin
-        val surfaceY = bentAlong * directionSin + across * directionCos
-        val surfaceZ = bentDepth +
-            twistXAmount * surfaceX * across +
-            twistYAmount * (surfaceX * surfaceX - surfaceY * surfaceY)
+        val bentX = bentAlong * directionCos - across * directionSin
+        val bentY = bentAlong * directionSin + across * directionCos
+        val bentZ = bentDepth
 
-        val acrossDx = -directionSin
-        val acrossDy = directionCos
         val surfaceXDx = directionCos * directionCos * bentAlongDerivative +
             directionSin * directionSin
         val surfaceXDy = directionCos * directionSin * (bentAlongDerivative - 1f)
         val surfaceYDx = surfaceXDy
         val surfaceYDy = directionSin * directionSin * bentAlongDerivative +
             directionCos * directionCos
-        val surfaceZDx = bentDepthDerivative * directionCos +
-            twistXAmount * (surfaceXDx * across + surfaceX * acrossDx) +
-            twistYAmount * (2f * surfaceX * surfaceXDx - 2f * surfaceY * surfaceYDx)
-        val surfaceZDy = bentDepthDerivative * directionSin +
-            twistXAmount * (surfaceXDy * across + surfaceX * acrossDy) +
-            twistYAmount * (2f * surfaceX * surfaceXDy - 2f * surfaceY * surfaceYDy)
+        val surfaceZDx = bentDepthDerivative * directionCos
+        val surfaceZDy = bentDepthDerivative * directionSin
 
         var normalX = surfaceYDx * surfaceZDy - surfaceZDx * surfaceYDy
         var normalY = surfaceZDx * surfaceXDy - surfaceXDx * surfaceZDy
@@ -404,6 +396,27 @@ private fun DrawScope.drawSurfaceMesh(
         normalX /= normalLength
         normalY /= normalLength
         normalZ /= normalLength
+
+        // Element 3D's Twist rotates the mesh around an axis as the vertex travels along that
+        // axis. Applying it as an actual 3D rotation keeps edge-on parts as the surface itself.
+        val twistXAngle = point.x * twistXAmount
+        val twistXCos = cos(twistXAngle)
+        val twistXSin = sin(twistXAngle)
+        val twistedY = bentY * twistXCos - bentZ * twistXSin
+        val twistedZ = bentY * twistXSin + bentZ * twistXCos
+        val normalTwistedY = normalY * twistXCos - normalZ * twistXSin
+        val normalTwistedZ = normalY * twistXSin + normalZ * twistXCos
+
+        val twistYAngle = point.y * twistYAmount
+        val twistYCos = cos(twistYAngle)
+        val twistYSin = sin(twistYAngle)
+        val surfaceX = bentX * twistYCos + twistedZ * twistYSin
+        val surfaceY = twistedY
+        val surfaceZ = -bentX * twistYSin + twistedZ * twistYCos
+        val normalTwistedX = normalX
+        normalX = normalTwistedX * twistYCos + normalTwistedZ * twistYSin
+        normalY = normalTwistedY
+        normalZ = -normalTwistedX * twistYSin + normalTwistedZ * twistYCos
 
         val rotatedY = surfaceY * rotationXCos - surfaceZ * rotationXSin
         val rotatedZ = surfaceY * rotationXSin + surfaceZ * rotationXCos
@@ -438,13 +451,13 @@ private fun DrawScope.drawSurfaceMesh(
         val radialShade = 0.64f + 0.36f * (1f - point.distance)
         val shade = (lightShade * radialShade).coerceIn(0.20f, 1f)
         val centerLight = smoothStep(
-            ((0.70f - point.distance) / 0.70f).coerceIn(0f, 1f),
+            ((0.42f - point.distance) / 0.42f).coerceIn(0f, 1f),
         )
         val whiteMix = (
-            diffuse.pow(8) * 0.08f +
+            diffuse.pow(8) * 0.12f +
                 rim * 0.02f +
-                centerLight * (0.12f + rim * 0.28f)
-            ).coerceIn(0f, 0.42f)
+                centerLight * (0.28f + rim * 0.34f)
+            ).coerceIn(0f, 0.58f)
         val alpha = (spec.opacity * opacityScale * (0.80f + 0.20f * facing))
             .coerceIn(0f, 1f)
         colors[index] = Color(

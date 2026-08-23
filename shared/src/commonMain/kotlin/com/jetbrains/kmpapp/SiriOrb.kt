@@ -74,9 +74,9 @@ private data class TargetOrbStyle(
     val errorAmount: Float,
 )
 
-internal val SiriBlue = Color(0xFF006DFF)
-internal val SiriTeal = Color(0xFF00DDB5)
-internal val SiriRed = Color(0xFFFF1744)
+internal val SiriBlue = Color(0xFF0021FF)
+internal val SiriTeal = Color(0xFF23FFE6)
+internal val SiriRed = Color(0xFFFF1212)
 private val VignetteBrush = Brush.radialGradient(
     colorStops = arrayOf(
         0f to Color.Transparent,
