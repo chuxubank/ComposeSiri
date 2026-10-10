@@ -39,7 +39,7 @@ float profile(float u){
 
 // signed-ish distance to sheet k in its local frame; also returns (u, v) in uv
 float sheetSdf(float3 p, float twist, float bend, out float2 uv){
-    float L = 0.90;              // half length (shell radii): 85% of diameter x1.5
+    float L = 1.05;              // half length (shell radii): 85% of diameter x1.5
     float u = (p.x + L) / (2.0*L);
     // bend: centreline arcs in y, centred
     float xs = p.x / L;
@@ -49,7 +49,7 @@ float sheetSdf(float3 p, float twist, float bend, out float2 uv){
     float a = twist * (u - 0.5);
     float c = cos(a), s = sin(a);
     float2 yz = float2(c*q.y + s*q.z, -s*q.y + c*q.z);
-    float w = profile(clamp(u,0.0,1.0)) * 0.42;   // half width (shell radii)
+    float w = profile(clamp(u,0.0,1.0)) * 0.55;   // half width (shell radii)
     uv = float2(u, yz.x / max(w, 1e-4));
     float dz = abs(yz.y) - 0.004;
     float dy = abs(yz.x) - w;
@@ -116,14 +116,16 @@ half4 main(float2 fc){
             float body = (0.18 + 0.82*centre) * (1.0 - fres) * (0.5 + 0.5*ring);
             float thinRim = pow(1.0 - ndv, 9.0);
             if (uPass < 0.5) {
-                acc += col.rgb * half(clamp(body * 2.4, 0.0, 1.0) * 0.8 * fog);
+                acc += col.rgb * half(clamp(body * 2.6, 0.0, 1.0) * 0.85 * fog);
             } else {
-                acc += col.rgb * half(thinRim*0.9*fog) + half3(thinRim*0.25*fog);
+                float rimK = thinRim * pow(1.0 - ndv, 4.0);
+                half3 bright = min(col.rgb * 1.35 + half3(0.12), half3(1.0));
+                acc += bright * half(clamp(rimK * 2.2, 0.0, 1.2) * fog);
             }
         } else if (minD < 0.012) {
             // edge-on: sheet thinner than a pixel -> bright needle line
             float g = 1.0 - minD/0.012;
-            if (uPass > 0.5) acc += (col.rgb*0.9 + half3(0.25)) * half(g*g*0.8);
+            if (uPass > 0.5) acc += min(col.rgb * 1.35 + half3(0.12), half3(1.0)) * half(g*g*0.7);
         }
     }
     float r = length(p);
@@ -162,8 +164,20 @@ internal fun renderSheetStills(outDir: Path, count: Int, fps: Double, seconds: D
             maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.12f)
         })
         val k = size / 1740f
+        // Inner shell glow: body blurred ~30% radius, ring mask 0.8..1.0, 30% strength.
+        c.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = 77 })
+        c.drawImage(bodyImg, 0f, 0f, Paint().apply {
+            imageFilter = ImageFilter.makeBlur(radius * 0.3f, radius * 0.3f, FilterTileMode.DECAL)
+        })
+        c.drawCircle(cx, cx, radius * 0.9f, Paint().apply {
+            blendMode = BlendMode.DST_IN
+            mode = org.jetbrains.skia.PaintMode.STROKE
+            strokeWidth = radius * 0.2f
+            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.04f)
+        })
+        c.restore()
         // Body: big soft colour fields (blur ~8% radius) plus faint wide glows.
-        for ((sigma, alpha) in listOf(radius * 0.08f to 1f, 200f * k to 0.125f, 80f * k to 0.25f)) {
+        for ((sigma, alpha) in listOf(radius * 0.12f to 0.75f, 200f * k to 0.08f, 80f * k to 0.12f)) {
             c.drawImage(bodyImg, 0f, 0f, Paint().apply {
                 imageFilter = ImageFilter.makeBlur(sigma, sigma, FilterTileMode.DECAL)
                 blendMode = BlendMode.PLUS
@@ -177,14 +191,37 @@ internal fun renderSheetStills(outDir: Path, count: Int, fps: Double, seconds: D
             this.alpha = 128
         })
         c.drawImage(rimImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })
-        // White core: small bright dot + fast falloff glow, ~30% radius.
-        for ((r, sig, col) in listOf(
-            Triple(radius * 0.10f, radius * 0.09f, 0x66FFFFFF),
-            Triple(radius * 0.05f, radius * 0.035f, 0xCCFFFFFF.toInt()),
-            Triple(radius * 0.035f, radius * 0.01f, 0xFFFFFFFF.toInt()),
+        // White core scaled by how much sheet body overlaps the centre.
+        val px = org.jetbrains.skia.Bitmap().apply { allocN32Pixels(5, 5) }
+        bodyImg.readPixels(px, (cx - 2).toInt(), (cx - 2).toInt())
+        var lum = 0f
+        for (yy in 0 until 5) for (xx in 0 until 5) {
+            val v = px.getColor(xx, yy)
+            lum += (((v shr 16) and 255) + ((v shr 8) and 255) + (v and 255)) / 765f
+        }
+        val cover = (lum / 25f * 1.2f).coerceIn(0.3f, 1.0f)
+        // White spill along the sheets near the centre.
+        c.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (40 * cover).toInt().coerceAtMost(255) })
+        c.drawImage(bodyImg, 0f, 0f, Paint().apply {
+            colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
+                0.33f, 0.33f, 0.33f, 0f, 0f,
+                0.33f, 0.33f, 0.33f, 0f, 0f,
+                0.33f, 0.33f, 0.33f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f))
+        })
+        c.drawCircle(cx, cx, radius * 0.28f, Paint().apply {
+            blendMode = BlendMode.DST_IN
+            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.12f)
+        })
+        c.restore()
+        for ((r, sig, a0) in listOf(
+            Triple(radius * 0.22f, radius * 0.16f, 0.30f),   // outer, slow falloff
+            Triple(radius * 0.12f, radius * 0.07f, 0.55f),   // halo (~30% radius overall)
+            Triple(radius * 0.035f, radius * 0.012f, 1.0f),  // bright dot
         )) {
+            val alpha = (a0 * (if (a0 < 1f) cover else 1f)).coerceIn(0f, 1f)
             c.drawCircle(cx, cx, r, Paint().apply {
-                color = col
+                color = ((alpha * 255).toInt() shl 24) or 0xFFFFFF
                 blendMode = BlendMode.PLUS
                 maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, sig)
             })
