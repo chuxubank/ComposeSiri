@@ -25,20 +25,22 @@ private const val TwoPi = 6.2831855f
 private const val DegreesToRadians = 0.017453292f
 
 // Length samples are packed toward the tips so the needle ends stay pointed.
-private const val PetalU = 52
-private const val PetalV = 16
+private const val PetalU = 56
+private const val PetalV = 22
 private const val PetalVertexCount = (PetalU + 1) * (PetalV + 1)
 
-// One loop of [ReferenceLoopMillis] is 17.117 s. Integer turn counts keep that
-// loop seamless. 2 turns is 42.1 deg/s (the -time*45 family); 1 turn is 21.0 deg/s.
-private const val TipReachFraction = 0.47f
+// The surface canvas is the glass disc (see SiriOrb). Mesh radius 1 maps to
+// half that disc, so 0.46 puts an unforeshortened tip at about 92% of the
+// shell radius. Integer spin counts keep the 17.117 s loop seamless.
+private const val TipReachFraction = 0.46f
 
 private val CoreBloomBrush = Brush.radialGradient(
     colorStops = arrayOf(
         0.00f to Color.White.copy(alpha = 1f),
-        0.16f to Color.White.copy(alpha = 0.88f),
-        0.34f to Color.White.copy(alpha = 0.42f),
-        0.58f to Color(0xFFEAF6FF).copy(alpha = 0.10f),
+        0.22f to Color.White.copy(alpha = 0.94f),
+        0.40f to Color.White.copy(alpha = 0.55f),
+        0.56f to Color(0xFFE7F6FF).copy(alpha = 0.12f),
+        0.72f to Color.Transparent,
         1.00f to Color.Transparent,
     ),
     center = Offset.Zero,
@@ -101,124 +103,110 @@ private val PetalTextureCoordinates: List<Offset> = List(PetalVertexCount) { ind
 
 private val PetalUValues: FloatArray = FloatArray(PetalU + 1) { index ->
     val t = index.toFloat() / PetalU
+    // Mild tip bias. A strong bias facets the wide middle of the fan.
     val biased = if (t < 0.5f) {
-        0.5f * (t * 2f).pow(0.72f)
+        0.5f * (t * 2f).pow(0.9f)
     } else {
-        1f - 0.5f * ((1f - t) * 2f).pow(0.72f)
+        1f - 0.5f * ((1f - t) * 2f).pow(0.9f)
     }
     biased * 2f - 1f
 }
 
-// Six Element 3D planes: flat sheets spun on X/Y/Z, then warped the way Turbulent
-// Displace pinches an ellipse into a curved petal. Two of each hue.
+// Five Element 3D planes. Each is a wide fan: a bright flank, a long translucent
+// body, and needle tips. Two turns on X/Z is the 42 deg/s family and closes
+// on the 17.117 s loop. Y only rocks, so the long axis stays inside the shell.
 private val SurfaceSpecs = listOf(
+    // halfWidth is the centered half-span in tip-length units. 0.55 is about
+    // half the shell diameter once the tip sits near 90% of the glass radius.
     SurfaceSpec(
         color = SiriRed,
         length = 1.02f,
-        halfWidth = 0.46f,
-        bend = 0.95f,
-        twist = 0.18f,
-        bulge = 0.22f,
-        softness = 0.70f,
-        rotX = 28f,
-        rotY = 10f,
-        rotZ = 8f,
+        halfWidth = 0.62f,
+        bend = 1.05f,
+        twist = 0.14f,
+        bulge = 0.08f,
+        softness = 0.92f,
+        rotX = 12f,
+        rotY = 6f,
+        rotZ = -24f,
         spinX = 2,
         spinZ = -2,
-        opacity = 0.72f,
+        opacity = 0.34f,
         crispSign = 1f,
         seed = 0.4f,
-        warp = 0.18f,
+        warp = 0.06f,
     ),
     SurfaceSpec(
         color = SiriBlue,
-        length = 0.78f,
-        halfWidth = 0.30f,
-        bend = 1.20f,
-        twist = -0.22f,
-        bulge = -0.18f,
-        softness = 0.34f,
-        rotX = 64f,
-        rotY = -8f,
-        rotZ = 58f,
-        spinX = -2,
-        spinZ = 2,
-        opacity = 0.80f,
-        crispSign = -1f,
-        seed = 1.7f,
-        warp = 0.16f,
-    ),
-    SurfaceSpec(
-        color = SiriRed,
-        length = 0.70f,
-        halfWidth = 0.34f,
-        bend = -1.28f,
-        twist = 0.30f,
-        bulge = 0.26f,
-        softness = 0.42f,
-        rotX = 58f,
-        rotY = 14f,
-        rotZ = 142f,
-        spinX = 2,
-        spinZ = 2,
-        opacity = 0.76f,
-        crispSign = 1f,
-        seed = 2.9f,
-        warp = 0.20f,
-    ),
-    SurfaceSpec(
-        color = SiriGreen,
         length = 1.00f,
-        halfWidth = 0.42f,
-        bend = 1.35f,
+        halfWidth = 0.56f,
+        bend = 1.28f,
         twist = -0.16f,
-        bulge = -0.20f,
-        softness = 0.66f,
-        rotX = 22f,
-        rotY = -12f,
-        rotZ = 196f,
+        bulge = -0.06f,
+        softness = 0.80f,
+        rotX = 24f,
+        rotY = -8f,
+        rotZ = 62f,
         spinX = -2,
-        spinZ = -2,
-        opacity = 0.68f,
+        spinZ = 2,
+        opacity = 0.46f,
         crispSign = -1f,
-        seed = 4.2f,
-        warp = 0.18f,
+        seed = 1.8f,
+        warp = 0.07f,
     ),
     SurfaceSpec(
         color = SiriTeal,
-        length = 0.84f,
-        halfWidth = 0.27f,
-        bend = -0.88f,
-        twist = 0.34f,
-        bulge = 0.12f,
-        softness = 0.30f,
-        rotX = 72f,
-        rotY = 9f,
-        rotZ = 236f,
+        length = 1.00f,
+        halfWidth = 0.52f,
+        bend = -1.08f,
+        twist = 0.14f,
+        bulge = 0.08f,
+        softness = 0.84f,
+        rotX = 18f,
+        rotY = 10f,
+        rotZ = 138f,
         spinX = 2,
-        spinZ = -2,
-        opacity = 0.78f,
+        spinZ = 2,
+        opacity = 0.40f,
         crispSign = 1f,
-        seed = 5.5f,
-        warp = 0.15f,
+        seed = 3.2f,
+        warp = 0.06f,
     ),
     SurfaceSpec(
-        color = SiriBlue,
-        length = 0.74f,
-        halfWidth = 0.50f,
-        bend = 0.72f,
-        twist = -0.14f,
-        bulge = 0.08f,
-        softness = 0.74f,
-        rotX = 18f,
-        rotY = 16f,
-        rotZ = 304f,
+        color = SiriRed,
+        length = 1.04f,
+        halfWidth = 0.38f,
+        bend = 1.42f,
+        twist = -0.20f,
+        bulge = 0.10f,
+        softness = 0.58f,
+        rotX = 36f,
+        rotY = -7f,
+        rotZ = 206f,
         spinX = -2,
-        spinZ = 2,
-        opacity = 0.64f,
+        spinZ = -2,
+        opacity = 0.52f,
         crispSign = -1f,
-        seed = 6.8f,
-        warp = 0.17f,
+        seed = 4.6f,
+        warp = 0.08f,
+    ),
+    SurfaceSpec(
+        color = SiriGreen,
+        length = 0.98f,
+        halfWidth = 0.50f,
+        bend = -1.22f,
+        twist = 0.12f,
+        bulge = -0.08f,
+        softness = 0.76f,
+        rotX = 28f,
+        rotY = 9f,
+        rotZ = 284f,
+        spinX = 2,
+        spinZ = -2,
+        opacity = 0.32f,
+        crispSign = 1f,
+        seed = 6.1f,
+        warp = 0.07f,
     ),
 )
 
@@ -229,6 +217,7 @@ internal fun SiriSurfaceField(
     audioLevel: Float,
     widthScale: Float = 1f,
     alphaScale: Float = 1f,
+    emphasizeEdge: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val positions = remember {
@@ -274,6 +263,7 @@ internal fun SiriSurfaceField(
                 tipReach = tipReach,
                 opacityScale = style.opacityScale * colorWeight * alphaScale,
                 widthScale = widthScale,
+                emphasizeEdge = emphasizeEdge,
                 paint = paint,
             )
         }
@@ -307,7 +297,8 @@ private fun DrawScope.drawCoreBloom(
     style: SiriOrbStyle,
     pulse: Float,
 ) {
-    val bloomRadius = tipReach * style.bloomScale * (0.52f + pulse * 0.03f)
+    // Soft white core, cut off before it fogs the dark gaps between lobes.
+    val bloomRadius = tipReach * style.bloomScale * (0.62f + pulse * 0.03f)
     withTransform({
         translate(core.x, core.y)
         scale(bloomRadius, bloomRadius, pivot = Offset.Zero)
@@ -351,6 +342,7 @@ private fun DrawScope.drawPetal(
     tipReach: Float,
     opacityScale: Float,
     widthScale: Float,
+    emphasizeEdge: Boolean,
     paint: Paint,
 ) {
     val rotXCos = cos(pose[0])
@@ -359,34 +351,36 @@ private fun DrawScope.drawPetal(
     val rotYSin = sin(pose[1])
     val rotZCos = cos(pose[2])
     val rotZSin = sin(pose[2])
-    val bend = spec.bend + 0.10f * sin(phase * 2f + spec.seed)
+    val bend = spec.bend + 0.08f * sin(phase * 2f + spec.seed)
     val evoX = cos(phase + spec.seed)
     val evoY = sin(phase + spec.seed)
     val halfWidth = spec.halfWidth * widthScale
-    // A full X turn would collapse a flat sheet to a hairline. Keep enough
-    // width that an edge-on frame stays a ribbon.
-    val facing = abs(rotXCos).coerceAtLeast(0.16f)
-    val widthKeep = (0.28f / facing).coerceIn(1f, 2.4f)
+    // Edge-on sheets would collapse to a hair. Hold a slim ribbon so the
+    // bright flank still reads as a needle instead of a one-pixel line.
+    val facing = abs(rotXCos).coerceAtLeast(0.02f)
+    val widthKeep = (0.30f / facing).coerceIn(1f, 2.6f)
 
     var vertex = 0
     for (i in 0..PetalU) {
         val u = PetalUValues[i]
+        val along = abs(u)
         val taper = taperAt(u, spec.bulge)
         val n1 = turbulence(u, spec.seed, evoX, evoY)
         val arc = centerline(u, bend)
         val acrossAmp = halfWidth * taper * (1f + spec.warp * n1)
-        val wobble = spec.warp * 0.08f * n1 * taper
+        val wobble = spec.warp * 0.06f * n1 * taper
         val twistAngle = u * spec.twist
         val twistCos = cos(twistAngle)
         val twistSin = sin(twistAngle)
         for (j in 0..PetalV) {
             val t0 = j.toFloat() / PetalV
             val t = if (spec.crispSign < 0f) 1f - t0 else t0
-            // Crisp flank sits near the negative side. The positive side is the long tail.
-            val across = ((t * 1.25f - 0.22f) * acrossAmp + wobble) * widthKeep
+            // Centered on the arc so the sides stay inside the glass and only the
+            // pinched tips reach the rim. t = 0 is the bright flank.
+            val across = ((t - 0.5f) * 2f * acrossAmp + wobble) * widthKeep
             val localX = (arc.x + arc.px * across * twistCos) * arc.norm * spec.length
             val localY = (arc.y + arc.py * across * twistCos) * arc.norm * spec.length
-            val localZ = across * twistSin * 0.35f
+            val localZ = across * twistSin * 0.28f
 
             val rotatedY = localY * rotXCos - localZ * rotXSin
             val rotatedZ = localY * rotXSin + localZ * rotXCos
@@ -395,7 +389,7 @@ private fun DrawScope.drawPetal(
             val rotatedX = rotatedX2 * rotZCos - rotatedY * rotZSin
             val rotatedY2 = rotatedX2 * rotZSin + rotatedY * rotZCos
 
-            val perspective = 1f / (1f + rotatedZ2 * 0.16f).coerceAtLeast(0.70f)
+            val perspective = 1f / (1f + rotatedZ2 * 0.12f).coerceAtLeast(0.72f)
             val screenX = core.x + tipReach * rotatedX * perspective
             val screenY = core.y + tipReach * rotatedY2 * perspective
             positions[vertex] = Offset(screenX, screenY)
@@ -403,12 +397,16 @@ private fun DrawScope.drawPetal(
             val dx = (screenX - core.x) / tipReach
             val dy = (screenY - core.y) / tipReach
             val dist = sqrt(dx * dx + dy * dy)
-            val profile = alphaProfile(t, spec.softness)
-            val alpha = (spec.opacity * opacityScale * profile).coerceIn(0f, 1f)
-            val spine = exp(-((t - 0.16f).pow(2)) / (0.03f + 0.06f * spec.softness))
-            val brightness = 0.90f + 0.18f * spine
-            val centerT = ((0.20f - dist) / 0.20f).coerceIn(0f, 1f)
-            val white = centerT * centerT * 0.35f * opacityScale.coerceIn(0f, 1f)
+            val profile = alphaProfile(t, along, spec.softness, emphasizeEdge)
+            // Let the core bloom own the middle so the sheets read as color, not a white disc.
+            // Keep the wide middle inside the glass. Needle tips are allowed to reach it.
+            val tipKeep = smoothStep(((along - 0.60f) / 0.32f).coerceIn(0f, 1f))
+            val outer = smoothStep(((dist - 0.84f) / 0.20f).coerceIn(0f, 1f))
+            val shellFade = 1f - outer * (1f - tipKeep)
+            val alpha = (spec.opacity * opacityScale * profile * shellFade).coerceIn(0f, 1f)
+            val edgeLight = exp(-(t * t) / 0.018f)
+            val brightness = 0.96f + 0.20f * edgeLight
+            val white = edgeLight * if (emphasizeEdge) 0.22f else 0.02f
             colors[vertex] = Color(
                 red = (spec.color.red * brightness + white).coerceIn(0f, 1f),
                 green = (spec.color.green * brightness + white).coerceIn(0f, 1f),
@@ -462,28 +460,35 @@ private fun centerline(u: Float, bend: Float): Centerline {
 }
 
 private fun taperAt(u: Float, bulge: Float): Float {
-    // Wide through the middle, then a short run into a needle tip.
+    // Wide fan through the body. The last quarter collapses to a needle tip.
     val along = abs(u)
     val base = if (along <= 0.62f) {
-        1f - 0.18f * (along / 0.62f).pow(2f)
+        1f - 0.04f * (along / 0.62f).pow(2f)
     } else {
         val t = (along - 0.62f) / 0.38f
-        0.82f * (1f - t).pow(1.45f)
+        0.96f * (1f - t).pow(2.5f)
     }
-    return base * (1f + bulge * u * (1f - along)).coerceAtLeast(0f)
+    return (base * (1f + bulge * u * (1f - along))).coerceAtLeast(0f)
 }
 
 // t = 0 is the crisp flank, t = 1 is the soft flank.
-private fun alphaProfile(t: Float, softness: Float): Float {
-    val rise = 0.03f + 0.04f * softness
-    val crisp = smoothStep((t / rise).coerceIn(0f, 1f))
-    val fallStart = 0.16f + 0.10f * softness
-    val faded = 1f - smoothStep(((t - fallStart) / (1.02f - fallStart)).coerceIn(0f, 1f))
-    val tail = faded.pow(0.55f + 0.4f * (1f - softness))
-    val spine = exp(-((t - 0.12f).pow(2)) / (0.014f + 0.04f * softness))
-    val veil = crisp * tail
-    return (veil * (0.28f + 0.55f * softness) + spine * (0.90f - 0.45f * softness))
-        .coerceIn(0f, 1f)
+private fun alphaProfile(
+    t: Float,
+    along: Float,
+    softness: Float,
+    emphasizeEdge: Boolean,
+): Float {
+    val tip = smoothStep(((along - 0.70f) / 0.30f).coerceIn(0f, 1f))
+    if (emphasizeEdge) {
+        val band = exp(-(t * t) / 0.02f)
+        return (band * (0.85f + 0.15f * tip)).coerceIn(0f, 1f)
+    }
+    // Soft interior. The sharp pass supplies the bright flank and the needles.
+    val flank = exp(-(t * t) / (0.03f + 0.02f * softness))
+    val veilT = smoothStep(((t - 0.04f) / 0.78f).coerceIn(0f, 1f))
+    val veil = (1f - veilT).pow(0.50f)
+    val veilWeight = 0.28f + 0.30f * softness
+    return (flank * 0.28f + veil * veilWeight).coerceIn(0f, 1f)
 }
 
 private fun turbulence(u: Float, seed: Float, evoX: Float, evoY: Float): Float {
