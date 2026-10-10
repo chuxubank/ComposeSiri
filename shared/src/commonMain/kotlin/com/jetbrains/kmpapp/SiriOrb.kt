@@ -23,13 +23,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.paint
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.MeshGradientPainter
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
@@ -64,31 +64,26 @@ internal data class SiriOrbStyle(
 
 internal val SiriBlue = Color(0xFF0021FF)
 internal val SiriTeal = Color(0xFF23FFE6)
-internal val SiriRed = Color(0xFFFF1212)
+internal val SiriGreen = Color(0xFF00F09A)
+internal val SiriRed = Color(0xFFFF1A22)
 private val VignetteBrush = Brush.radialGradient(
     colorStops = arrayOf(
         0f to Color.Transparent,
-        0.58f to Color.Transparent,
-        0.82f to Color.Black.copy(alpha = 0.30f),
-        1f to Color.Black.copy(alpha = 0.88f),
+        0.78f to Color.Transparent,
+        0.92f to Color.Black.copy(alpha = 0.18f),
+        1f to Color.Black.copy(alpha = 0.45f),
     ),
     center = Offset.Zero,
     radius = 1f,
 )
 private val ReflectionBrush = Brush.radialGradient(
-    colors = listOf(Color.White.copy(alpha = 0.065f), Color.Transparent),
+    colors = listOf(Color.White.copy(alpha = 0.035f), Color.Transparent),
     center = Offset.Zero,
     radius = 1f,
 )
 
 /**
- * A Siri-inspired animated orb built from six bent and twisted 3D ellipse surfaces.
- *
- * [audioLevel] is sampled while [state] is [SiriOrbState.Speaking] or [SiriOrbState.Error] to
- * drive the breathing response. The caller controls the component size through [modifier].
- */
-/**
- * A Siri-inspired animated orb built from six bent and twisted 3D ellipse surfaces.
+ * A Siri-inspired animated orb built from six curved, tapered 3D sheets.
  *
  * [audioLevel] is sampled while [state] is [SiriOrbState.Speaking] or [SiriOrbState.Error] to
  * drive the breathing response. The caller controls the component size through [modifier].
@@ -145,28 +140,49 @@ private fun SiriOrbFrame(
     style: SiriOrbStyle,
 ) {
     val phaseState = rememberUpdatedState(siriOrbPhase(timeMillis))
-    val volumePainter = remember { volumePainter() }
 
     Box(modifier = modifier.aspectRatio(1f)) {
-        OrbShell(Modifier.matchParentSize())
-
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .padding(4.dp)
                 .graphicsLayer {
                     shape = CircleShape
                     clip = true
                     compositingStrategy = CompositingStrategy.Offscreen
                 }
-                .background(Color(0xFF000206)),
+                .background(Color.Black),
         ) {
+            // Wide gaussian for the soft flank, then a tighter pass so the
+            // needle tips and one edge stay defined.
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .paint(volumePainter),
-            )
-            SiriSurfaceField(
+                    .blur(22.dp, BlurredEdgeTreatment.Unbounded),
+            ) {
+                SiriSurfaceField(
+                    phaseState = phaseState,
+                    style = style,
+                    audioLevel = audioLevel.coerceIn(0f, 1f),
+                    widthScale = 1.55f,
+                    alphaScale = 0.9f,
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .blur(7.dp, BlurredEdgeTreatment.Unbounded),
+            ) {
+                SiriSurfaceField(
+                    phaseState = phaseState,
+                    style = style,
+                    audioLevel = audioLevel.coerceIn(0f, 1f),
+                    widthScale = 0.16f,
+                    alphaScale = 1f,
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
+            SiriCoreBloom(
                 phaseState = phaseState,
                 style = style,
                 audioLevel = audioLevel.coerceIn(0f, 1f),
@@ -177,6 +193,7 @@ private fun SiriOrbFrame(
                 modifier = Modifier.matchParentSize(),
             )
         }
+        OrbShell(Modifier.matchParentSize())
     }
 }
 
@@ -318,34 +335,21 @@ private fun SiriOrbState.targetStyle(): SiriOrbStyle = when (this) {
 @Composable
 private fun OrbShell(modifier: Modifier = Modifier) {
     Canvas(modifier) {
-        val radius = size.minDimension / 2f
-        drawCircle(
-            brush = Brush.radialGradient(
-                colorStops = arrayOf(
-                    0f to Color(0xFF030A12),
-                    0.72f to Color(0xFF01050A),
-                    0.90f to Color(0xFF07182A),
-                    0.98f to Color(0xFF02060B),
-                    1f to Color.Black,
-                ),
-                center = center,
-                radius = radius,
-            ),
-            radius = radius,
-        )
+        val radius = size.minDimension * 0.47f
+        val stroke = size.minDimension * 0.0035f
         drawCircle(
             brush = Brush.sweepGradient(
-                colors = listOf(
-                    SiriRed.copy(alpha = 0.20f),
-                    Color.Transparent,
-                    SiriBlue.copy(alpha = 0.26f),
-                    SiriTeal.copy(alpha = 0.18f),
-                    SiriRed.copy(alpha = 0.20f),
+                colorStops = arrayOf(
+                    0.00f to Color(0xFF7A2434).copy(alpha = 0.42f),
+                    0.22f to Color(0xFF102028).copy(alpha = 0.10f),
+                    0.48f to Color(0xFF1A4A52).copy(alpha = 0.32f),
+                    0.74f to Color(0xFF2A1218).copy(alpha = 0.08f),
+                    1.00f to Color(0xFF7A2434).copy(alpha = 0.42f),
                 ),
                 center = center,
             ),
-            radius = radius - 1.5.dp.toPx(),
-            style = Stroke(width = 1.1.dp.toPx()),
+            radius = radius,
+            style = Stroke(width = stroke),
         )
     }
 }
@@ -368,7 +372,7 @@ private fun OrbGlass(
             x = size.width * (0.34f + 0.025f * sin(phase)),
             y = size.height * (0.25f + 0.018f * cos(phase * 2f)),
         )
-        val reflectionRadius = radius * 0.30f
+        val reflectionRadius = radius * 0.22f
         withTransform({
             translate(reflectionCenter.x, reflectionCenter.y)
             scale(reflectionRadius, reflectionRadius, pivot = Offset.Zero)
@@ -383,46 +387,4 @@ private fun OrbGlass(
     }
 }
 
-private fun volumePainter(): MeshGradientPainter = MeshGradientPainter(
-    rows = 2,
-    columns = 2,
-    hasBicubicColor = true,
-) {
-    setVertex(0, 0, Offset(0f, 0f), Color.Transparent)
-    setVertex(
-        0,
-        1,
-        Offset(0.52f, 0f),
-        SiriRed.copy(alpha = 0.15f),
-    )
-    setVertex(0, 2, Offset(1f, 0f), Color.Transparent)
-    setVertex(
-        1,
-        0,
-        Offset(0f, 0.47f),
-        SiriBlue.copy(alpha = 0.14f),
-    )
-    setVertex(
-        1,
-        1,
-        Offset(
-            0.52f,
-            0.48f,
-        ),
-        Color(0xFFBFFFFF).copy(alpha = 0.12f),
-    )
-    setVertex(
-        1,
-        2,
-        Offset(1f, 0.54f),
-        SiriTeal.copy(alpha = 0.14f),
-    )
-    setVertex(2, 0, Offset(0f, 1f), Color.Transparent)
-    setVertex(
-        2,
-        1,
-        Offset(0.47f, 1f),
-        SiriBlue.copy(alpha = 0.13f),
-    )
-    setVertex(2, 2, Offset(1f, 1f), Color.Transparent)
-}
+

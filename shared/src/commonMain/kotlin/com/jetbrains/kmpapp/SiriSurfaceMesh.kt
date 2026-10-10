@@ -16,22 +16,30 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
 import kotlin.math.abs
 import kotlin.math.cos
-import kotlin.math.max
+import kotlin.math.exp
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 private const val TwoPi = 6.2831855f
 private const val DegreesToRadians = 0.017453292f
-private const val DiscRings = 7
-private const val DiscSegments = 28
+
+// Length samples are packed toward the tips so the needle ends stay pointed.
+private const val PetalU = 52
+private const val PetalV = 16
+private const val PetalVertexCount = (PetalU + 1) * (PetalV + 1)
+
+// One loop of [ReferenceLoopMillis] is 17.117 s. Integer turn counts keep that
+// loop seamless. 2 turns is 42.1 deg/s (the -time*45 family); 1 turn is 21.0 deg/s.
+private const val TipReachFraction = 0.47f
 
 private val CoreBloomBrush = Brush.radialGradient(
     colorStops = arrayOf(
-        0f to Color.White.copy(alpha = 0.90f),
-        0.18f to Color(0xFFE9FFFF).copy(alpha = 0.72f),
-        0.50f to Color(0xFFB9F7FF).copy(alpha = 0.32f),
-        1f to Color.Transparent,
+        0.00f to Color.White.copy(alpha = 1f),
+        0.16f to Color.White.copy(alpha = 0.88f),
+        0.34f to Color.White.copy(alpha = 0.42f),
+        0.58f to Color(0xFFEAF6FF).copy(alpha = 0.10f),
+        1.00f to Color.Transparent,
     ),
     center = Offset.Zero,
     radius = 1f,
@@ -39,199 +47,178 @@ private val CoreBloomBrush = Brush.radialGradient(
 
 private val ErrorBloomBrush = Brush.radialGradient(
     colorStops = arrayOf(
-        0f to Color(0xFFFFF0E8).copy(alpha = 0.90f),
-        0.18f to SiriRed.copy(alpha = 0.78f),
-        0.50f to Color(0xFFFF001F).copy(alpha = 0.36f),
-        1f to Color.Transparent,
+        0.00f to Color(0xFFFFF4F0).copy(alpha = 0.92f),
+        0.28f to SiriRed.copy(alpha = 0.70f),
+        0.62f to Color(0xFFFF1A2A).copy(alpha = 0.18f),
+        1.00f to Color.Transparent,
     ),
     center = Offset.Zero,
     radius = 1f,
 )
 
-private data class DiscPoint(
-    val x: Float,
-    val y: Float,
-    val distance: Float,
-)
-
 private data class SurfaceSpec(
     val color: Color,
-    val scale: Float,
-    val rotationX: Float,
-    val rotationY: Float,
-    val rotationZ: Float,
-    val rotationXRange: Float,
-    val rotationYRange: Float,
-    val rotationZRange: Float,
-    val twistX: Float,
-    val twistY: Float,
+    val length: Float,
+    val halfWidth: Float,
     val bend: Float,
-    val bendRange: Float,
-    val bendDirection: Float,
-    val phaseOffset: Float,
+    val twist: Float,
+    val bulge: Float,
+    val softness: Float,
+    val rotX: Float,
+    val rotY: Float,
+    val rotZ: Float,
+    val spinX: Int,
+    val spinZ: Int,
     val opacity: Float,
+    val crispSign: Float,
+    val seed: Float,
+    val warp: Float,
 )
 
-private data class SurfacePose(
-    val rotationX: Float,
-    val rotationY: Float,
-    val rotationZ: Float,
-    val twistX: Float,
-    val twistY: Float,
-    val bend: Float,
-    val bendDirection: Float,
-)
-
-private val DiscPoints: List<DiscPoint> = buildList {
-    add(DiscPoint(0f, 0f, 0f))
-    for (ring in 1..DiscRings) {
-        val distance = ring.toFloat() / DiscRings
-        for (segment in 0 until DiscSegments) {
-            val angle = TwoPi * segment / DiscSegments
-            add(
-                DiscPoint(
-                    x = cos(angle) * distance,
-                    y = sin(angle) * distance,
-                    distance = distance,
-                ),
-            )
+private val PetalIndices: List<Int> = buildList {
+    fun vertexId(i: Int, j: Int) = i * (PetalV + 1) + j
+    for (i in 0 until PetalU) {
+        for (j in 0 until PetalV) {
+            val a = vertexId(i, j)
+            val b = vertexId(i + 1, j)
+            val c = vertexId(i + 1, j + 1)
+            val d = vertexId(i, j + 1)
+            add(a)
+            add(b)
+            add(c)
+            add(a)
+            add(c)
+            add(d)
         }
     }
 }
 
-private val DiscIndices: List<Int> = buildList {
-    for (segment in 0 until DiscSegments) {
-        add(0)
-        add(1 + segment)
-        add(1 + (segment + 1) % DiscSegments)
-    }
-    for (ring in 2..DiscRings) {
-        val innerStart = 1 + (ring - 2) * DiscSegments
-        val outerStart = 1 + (ring - 1) * DiscSegments
-        for (segment in 0 until DiscSegments) {
-            val next = (segment + 1) % DiscSegments
-            add(innerStart + segment)
-            add(outerStart + segment)
-            add(outerStart + next)
-            add(innerStart + segment)
-            add(outerStart + next)
-            add(innerStart + next)
-        }
-    }
+private val PetalTextureCoordinates: List<Offset> = List(PetalVertexCount) { index ->
+    val i = index / (PetalV + 1)
+    val j = index - i * (PetalV + 1)
+    Offset(i.toFloat() / PetalU, j.toFloat() / PetalV)
 }
 
-private val DiscTextureCoordinates: List<Offset> = DiscPoints.map { point ->
-    Offset(
-        x = (point.x + 1f) * 0.5f,
-        y = (point.y + 1f) * 0.5f,
-    )
+private val PetalUValues: FloatArray = FloatArray(PetalU + 1) { index ->
+    val t = index.toFloat() / PetalU
+    val biased = if (t < 0.5f) {
+        0.5f * (t * 2f).pow(0.72f)
+    } else {
+        1f - 0.5f * ((1f - t) * 2f).pow(0.72f)
+    }
+    biased * 2f - 1f
 }
 
-// Baselines are the six Element 3D groups in reference/siri.aep: two red, two blue and two
-// teal copies of the same 922 x 922 ellipse. The ranges turn those authored poses into a seamless
-// loop while preserving each group's characteristic bend and twist.
+// Six Element 3D planes: flat sheets spun on X/Y/Z, then warped the way Turbulent
+// Displace pinches an ellipse into a curved petal. Two of each hue.
 private val SurfaceSpecs = listOf(
     SurfaceSpec(
         color = SiriRed,
-        scale = 1.05f,
-        rotationX = -87f,
-        rotationY = 259f,
-        rotationZ = -189f,
-        rotationXRange = 6f,
-        rotationYRange = 10f,
-        rotationZRange = 94f,
-        twistX = -7f,
-        twistY = -21f,
-        bend = -51f,
-        bendRange = 18f,
-        bendDirection = -33f,
-        phaseOffset = 0.20f,
-        opacity = 0.94f,
+        length = 1.02f,
+        halfWidth = 0.46f,
+        bend = 0.95f,
+        twist = 0.18f,
+        bulge = 0.22f,
+        softness = 0.70f,
+        rotX = 28f,
+        rotY = 10f,
+        rotZ = 8f,
+        spinX = 2,
+        spinZ = -2,
+        opacity = 0.72f,
+        crispSign = 1f,
+        seed = 0.4f,
+        warp = 0.18f,
     ),
     SurfaceSpec(
         color = SiriBlue,
-        scale = 0.88f,
-        rotationX = -29f,
-        rotationY = 134f,
-        rotationZ = 3.3f,
-        rotationXRange = 22f,
-        rotationYRange = 34f,
-        rotationZRange = 82f,
-        twistX = -19f,
-        twistY = -64f,
-        bend = 35f,
-        bendRange = 30f,
-        bendDirection = 65f,
-        phaseOffset = 1.18f,
-        opacity = 0.60f,
+        length = 0.78f,
+        halfWidth = 0.30f,
+        bend = 1.20f,
+        twist = -0.22f,
+        bulge = -0.18f,
+        softness = 0.34f,
+        rotX = 64f,
+        rotY = -8f,
+        rotZ = 58f,
+        spinX = -2,
+        spinZ = 2,
+        opacity = 0.80f,
+        crispSign = -1f,
+        seed = 1.7f,
+        warp = 0.16f,
     ),
     SurfaceSpec(
         color = SiriRed,
-        scale = 0.90f,
-        rotationX = -16f,
-        rotationY = 221f,
-        rotationZ = 99f,
-        rotationXRange = 24f,
-        rotationYRange = 34f,
-        rotationZRange = 78f,
-        twistX = 12f,
-        twistY = 38f,
-        bend = 106f,
-        bendRange = 31f,
-        bendDirection = 228f,
-        phaseOffset = 2.24f,
-        opacity = 0.60f,
+        length = 0.70f,
+        halfWidth = 0.34f,
+        bend = -1.28f,
+        twist = 0.30f,
+        bulge = 0.26f,
+        softness = 0.42f,
+        rotX = 58f,
+        rotY = 14f,
+        rotZ = 142f,
+        spinX = 2,
+        spinZ = 2,
+        opacity = 0.76f,
+        crispSign = 1f,
+        seed = 2.9f,
+        warp = 0.20f,
+    ),
+    SurfaceSpec(
+        color = SiriGreen,
+        length = 1.00f,
+        halfWidth = 0.42f,
+        bend = 1.35f,
+        twist = -0.16f,
+        bulge = -0.20f,
+        softness = 0.66f,
+        rotX = 22f,
+        rotY = -12f,
+        rotZ = 196f,
+        spinX = -2,
+        spinZ = -2,
+        opacity = 0.68f,
+        crispSign = -1f,
+        seed = 4.2f,
+        warp = 0.18f,
     ),
     SurfaceSpec(
         color = SiriTeal,
-        scale = 1.04f,
-        rotationX = 82f,
-        rotationY = 14f,
-        rotationZ = 164.4f,
-        rotationXRange = 6f,
-        rotationYRange = 10f,
-        rotationZRange = 76f,
-        twistX = 0f,
-        twistY = -2f,
-        bend = 55f,
-        bendRange = 20f,
-        bendDirection = 34f,
-        phaseOffset = 3.25f,
-        opacity = 0.92f,
-    ),
-    SurfaceSpec(
-        color = SiriTeal,
-        scale = 0.86f,
-        rotationX = 162f,
-        rotationY = 14f,
-        rotationZ = 305f,
-        rotationXRange = 22f,
-        rotationYRange = 30f,
-        rotationZRange = 84f,
-        twistX = 0f,
-        twistY = -15f,
-        bend = -109f,
-        bendRange = 30f,
-        bendDirection = 30f,
-        phaseOffset = 4.31f,
-        opacity = 0.58f,
+        length = 0.84f,
+        halfWidth = 0.27f,
+        bend = -0.88f,
+        twist = 0.34f,
+        bulge = 0.12f,
+        softness = 0.30f,
+        rotX = 72f,
+        rotY = 9f,
+        rotZ = 236f,
+        spinX = 2,
+        spinZ = -2,
+        opacity = 0.78f,
+        crispSign = 1f,
+        seed = 5.5f,
+        warp = 0.15f,
     ),
     SurfaceSpec(
         color = SiriBlue,
-        scale = 0.93f,
-        rotationX = -82f,
-        rotationY = 217f,
-        rotationZ = 91f,
-        rotationXRange = 6f,
-        rotationYRange = 10f,
-        rotationZRange = 80f,
-        twistX = 7f,
-        twistY = -30f,
-        bend = 33f,
-        bendRange = 18f,
-        bendDirection = 44f,
-        phaseOffset = 5.36f,
-        opacity = 0.94f,
+        length = 0.74f,
+        halfWidth = 0.50f,
+        bend = 0.72f,
+        twist = -0.14f,
+        bulge = 0.08f,
+        softness = 0.74f,
+        rotX = 18f,
+        rotY = 16f,
+        rotZ = 304f,
+        spinX = -2,
+        spinZ = 2,
+        opacity = 0.64f,
+        crispSign = -1f,
+        seed = 6.8f,
+        warp = 0.17f,
     ),
 )
 
@@ -240,18 +227,23 @@ internal fun SiriSurfaceField(
     phaseState: State<Float>,
     style: SiriOrbStyle,
     audioLevel: Float,
+    widthScale: Float = 1f,
+    alphaScale: Float = 1f,
     modifier: Modifier = Modifier,
 ) {
     val positions = remember {
-        List(SurfaceSpecs.size) { MutableList(DiscPoints.size) { Offset.Zero } }
+        List(SurfaceSpecs.size) { MutableList(PetalVertexCount) { Offset.Zero } }
     }
     val colors = remember {
-        List(SurfaceSpecs.size) { MutableList(DiscPoints.size) { Color.Transparent } }
+        List(SurfaceSpecs.size) { MutableList(PetalVertexCount) { Color.Transparent } }
     }
     val paint = remember {
         Paint().apply {
+            // Modulate against this white keeps the vertex color. Plus is the
+            // composite onto the canvas, so overlapping sheets brighten.
             color = Color.White
-            blendMode = BlendMode.Screen
+            isAntiAlias = true
+            blendMode = BlendMode.Plus
         }
     }
 
@@ -263,222 +255,244 @@ internal fun SiriSurfaceField(
                 0.17f * sin(phase * 11f + 1.4f)
             ).coerceIn(0f, 1f)
         val pulse = style.pulseAmount * audioLevel * voiceWave
-        val radius = size.minDimension * 0.43f * style.sizeScale * (1f + pulse * 0.075f)
-        val core = Offset(
-            x = center.x + radius * 0.018f * style.motionScale * sin(phase * 2f + 0.4f),
-            y = center.y + radius * 0.022f * style.motionScale * cos(phase * 3f - 0.2f),
-        )
+        val tipReach = size.minDimension * TipReachFraction * style.sizeScale *
+            (1f + pulse * 0.06f)
+        val core = center
         SurfaceSpecs.forEachIndexed { index, spec ->
             val colorWeight = when (spec.color) {
                 SiriRed -> style.redWeight
                 SiriBlue -> style.blueWeight
                 else -> style.tealWeight
             }
-            drawSurfaceMesh(
+            drawPetal(
                 spec = spec,
-                pose = spec.poseAt(phase, style.motionScale),
+                pose = spec.anglesAt(phase),
+                phase = phase,
                 positions = positions[index],
                 colors = colors[index],
                 core = core,
-                radius = radius * spec.scale,
-                opacityScale = style.opacityScale * colorWeight,
-                colorGain = 0.86f + 0.14f * colorWeight,
+                tipReach = tipReach,
+                opacityScale = style.opacityScale * colorWeight * alphaScale,
+                widthScale = widthScale,
                 paint = paint,
             )
         }
-        val bloomRadius = radius * style.bloomScale * (
-            0.46f + 0.018f * sin(phase * 3f + 0.4f) + pulse * 0.07f
-        )
-        withTransform({
-            translate(core.x, core.y)
-            scale(bloomRadius, bloomRadius, pivot = Offset.Zero)
-        }) {
-            drawCircle(
-                brush = CoreBloomBrush,
-                center = Offset.Zero,
-                radius = 1f,
-                alpha = style.bloomAlpha * (1f - style.errorAmount),
-                blendMode = BlendMode.Screen,
-            )
-            drawCircle(
-                brush = ErrorBloomBrush,
-                center = Offset.Zero,
-                radius = 1f,
-                alpha = style.bloomAlpha * style.errorAmount,
-                blendMode = BlendMode.Screen,
-            )
-        }
     }
 }
 
-private fun SurfaceSpec.poseAt(phase: Float, motionScale: Float): SurfacePose {
-    val local = phase + phaseOffset
-    return SurfacePose(
-        rotationX = rotationX + rotationXRange * motionScale * sin(local),
-        rotationY = rotationY + rotationYRange * motionScale * sin(local + 0.73f),
-        rotationZ = rotationZ + rotationZRange * motionScale * sin(local * 2f + 0.21f),
-        twistX = twistX + 12f * motionScale * sin(local * 1.5f + 1.1f),
-        twistY = twistY + 20f * motionScale * sin(local + 1.83f),
-        bend = bend + bendRange * motionScale * sin(local * 2f + 0.82f),
-        bendDirection = bendDirection + 20f * motionScale * sin(local + 1.37f),
+@Composable
+internal fun SiriCoreBloom(
+    phaseState: State<Float>,
+    style: SiriOrbStyle,
+    audioLevel: Float,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier) {
+        val phase = phaseState.value
+        val voiceWave = (
+            0.55f +
+                0.28f * sin(phase * 7f + 0.2f) +
+                0.17f * sin(phase * 11f + 1.4f)
+            ).coerceIn(0f, 1f)
+        val pulse = style.pulseAmount * audioLevel * voiceWave
+        val tipReach = size.minDimension * TipReachFraction * style.sizeScale *
+            (1f + pulse * 0.06f)
+        drawCoreBloom(center, tipReach, style, pulse)
+    }
+}
+
+private fun DrawScope.drawCoreBloom(
+    core: Offset,
+    tipReach: Float,
+    style: SiriOrbStyle,
+    pulse: Float,
+) {
+    val bloomRadius = tipReach * style.bloomScale * (0.52f + pulse * 0.03f)
+    withTransform({
+        translate(core.x, core.y)
+        scale(bloomRadius, bloomRadius, pivot = Offset.Zero)
+    }) {
+        drawCircle(
+            brush = CoreBloomBrush,
+            center = Offset.Zero,
+            radius = 1f,
+            alpha = style.bloomAlpha * (1f - style.errorAmount),
+            blendMode = BlendMode.Plus,
+        )
+        drawCircle(
+            brush = ErrorBloomBrush,
+            center = Offset.Zero,
+            radius = 1f,
+            alpha = style.bloomAlpha * style.errorAmount,
+            blendMode = BlendMode.Plus,
+        )
+    }
+}
+
+private fun SurfaceSpec.anglesAt(phase: Float): FloatArray {
+    val spin = phase / TwoPi
+    // Y only rocks. A full turn on Y would swing the long axis at the camera
+    // and pull the tips off the shell. X and Z spin at ±2 turns (42.1 deg/s).
+    val tiltY = rotY + sin(phase + seed) * 12f
+    return floatArrayOf(
+        (rotX + spinX * 360f * spin) * DegreesToRadians,
+        tiltY * DegreesToRadians,
+        (rotZ + spinZ * 360f * spin) * DegreesToRadians,
     )
 }
 
-private fun DrawScope.drawSurfaceMesh(
+private fun DrawScope.drawPetal(
     spec: SurfaceSpec,
-    pose: SurfacePose,
+    pose: FloatArray,
+    phase: Float,
     positions: MutableList<Offset>,
     colors: MutableList<Color>,
     core: Offset,
-    radius: Float,
+    tipReach: Float,
     opacityScale: Float,
-    colorGain: Float,
+    widthScale: Float,
     paint: Paint,
 ) {
-    val direction = pose.bendDirection * DegreesToRadians
-    val directionCos = cos(direction)
-    val directionSin = sin(direction)
-    val bendAmount = pose.bend * DegreesToRadians * 0.5f
-    val twistXAmount = pose.twistX * DegreesToRadians * 0.72f
-    val twistYAmount = pose.twistY * DegreesToRadians * 0.72f
+    val rotXCos = cos(pose[0])
+    val rotXSin = sin(pose[0])
+    val rotYCos = cos(pose[1])
+    val rotYSin = sin(pose[1])
+    val rotZCos = cos(pose[2])
+    val rotZSin = sin(pose[2])
+    val bend = spec.bend + 0.10f * sin(phase * 2f + spec.seed)
+    val evoX = cos(phase + spec.seed)
+    val evoY = sin(phase + spec.seed)
+    val halfWidth = spec.halfWidth * widthScale
+    // A full X turn would collapse a flat sheet to a hairline. Keep enough
+    // width that an edge-on frame stays a ribbon.
+    val facing = abs(rotXCos).coerceAtLeast(0.16f)
+    val widthKeep = (0.28f / facing).coerceIn(1f, 2.4f)
 
-    val rotationX = pose.rotationX * DegreesToRadians
-    val rotationY = pose.rotationY * DegreesToRadians
-    val rotationZ = pose.rotationZ * DegreesToRadians
-    val rotationXCos = cos(rotationX)
-    val rotationXSin = sin(rotationX)
-    val rotationYCos = cos(rotationY)
-    val rotationYSin = sin(rotationY)
-    val rotationZCos = cos(rotationZ)
-    val rotationZSin = sin(rotationZ)
+    var vertex = 0
+    for (i in 0..PetalU) {
+        val u = PetalUValues[i]
+        val taper = taperAt(u, spec.bulge)
+        val n1 = turbulence(u, spec.seed, evoX, evoY)
+        val arc = centerline(u, bend)
+        val acrossAmp = halfWidth * taper * (1f + spec.warp * n1)
+        val wobble = spec.warp * 0.08f * n1 * taper
+        val twistAngle = u * spec.twist
+        val twistCos = cos(twistAngle)
+        val twistSin = sin(twistAngle)
+        for (j in 0..PetalV) {
+            val t0 = j.toFloat() / PetalV
+            val t = if (spec.crispSign < 0f) 1f - t0 else t0
+            // Crisp flank sits near the negative side. The positive side is the long tail.
+            val across = ((t * 1.25f - 0.22f) * acrossAmp + wobble) * widthKeep
+            val localX = (arc.x + arc.px * across * twistCos) * arc.norm * spec.length
+            val localY = (arc.y + arc.py * across * twistCos) * arc.norm * spec.length
+            val localZ = across * twistSin * 0.35f
 
-    DiscPoints.forEachIndexed { index, point ->
-        val along = point.x * directionCos + point.y * directionSin
-        val across = -point.x * directionSin + point.y * directionCos
-        val angle = along * bendAmount
-        val angleCos = cos(angle)
-        val angleSin = sin(angle)
-        val bentAlong: Float
-        val bentDepth: Float
-        val bentAlongDerivative: Float
-        val bentDepthDerivative: Float
-        if (abs(bendAmount) < 0.0001f) {
-            bentAlong = along
-            bentDepth = 0f
-            bentAlongDerivative = 1f
-            bentDepthDerivative = 0f
-        } else {
-            bentAlong = angleSin / bendAmount
-            bentDepth = (1f - angleCos) / bendAmount
-            bentAlongDerivative = angleCos
-            bentDepthDerivative = angleSin
+            val rotatedY = localY * rotXCos - localZ * rotXSin
+            val rotatedZ = localY * rotXSin + localZ * rotXCos
+            val rotatedX2 = localX * rotYCos + rotatedZ * rotYSin
+            val rotatedZ2 = -localX * rotYSin + rotatedZ * rotYCos
+            val rotatedX = rotatedX2 * rotZCos - rotatedY * rotZSin
+            val rotatedY2 = rotatedX2 * rotZSin + rotatedY * rotZCos
+
+            val perspective = 1f / (1f + rotatedZ2 * 0.16f).coerceAtLeast(0.70f)
+            val screenX = core.x + tipReach * rotatedX * perspective
+            val screenY = core.y + tipReach * rotatedY2 * perspective
+            positions[vertex] = Offset(screenX, screenY)
+
+            val dx = (screenX - core.x) / tipReach
+            val dy = (screenY - core.y) / tipReach
+            val dist = sqrt(dx * dx + dy * dy)
+            val profile = alphaProfile(t, spec.softness)
+            val alpha = (spec.opacity * opacityScale * profile).coerceIn(0f, 1f)
+            val spine = exp(-((t - 0.16f).pow(2)) / (0.03f + 0.06f * spec.softness))
+            val brightness = 0.90f + 0.18f * spine
+            val centerT = ((0.20f - dist) / 0.20f).coerceIn(0f, 1f)
+            val white = centerT * centerT * 0.35f * opacityScale.coerceIn(0f, 1f)
+            colors[vertex] = Color(
+                red = (spec.color.red * brightness + white).coerceIn(0f, 1f),
+                green = (spec.color.green * brightness + white).coerceIn(0f, 1f),
+                blue = (spec.color.blue * brightness + white).coerceIn(0f, 1f),
+                alpha = alpha,
+            )
+            vertex++
         }
-
-        val bentX = bentAlong * directionCos - across * directionSin
-        val bentY = bentAlong * directionSin + across * directionCos
-        val bentZ = bentDepth
-
-        val surfaceXDx = directionCos * directionCos * bentAlongDerivative +
-            directionSin * directionSin
-        val surfaceXDy = directionCos * directionSin * (bentAlongDerivative - 1f)
-        val surfaceYDx = surfaceXDy
-        val surfaceYDy = directionSin * directionSin * bentAlongDerivative +
-            directionCos * directionCos
-        val surfaceZDx = bentDepthDerivative * directionCos
-        val surfaceZDy = bentDepthDerivative * directionSin
-
-        var normalX = surfaceYDx * surfaceZDy - surfaceZDx * surfaceYDy
-        var normalY = surfaceZDx * surfaceXDy - surfaceXDx * surfaceZDy
-        var normalZ = surfaceXDx * surfaceYDy - surfaceYDx * surfaceXDy
-        val normalLength = sqrt(
-            normalX * normalX + normalY * normalY + normalZ * normalZ,
-        ).coerceAtLeast(0.0001f)
-        normalX /= normalLength
-        normalY /= normalLength
-        normalZ /= normalLength
-
-        // Element 3D's Twist rotates the mesh around an axis as the vertex travels along that
-        // axis. Applying it as an actual 3D rotation keeps edge-on parts as the surface itself.
-        val twistXAngle = point.x * twistXAmount
-        val twistXCos = cos(twistXAngle)
-        val twistXSin = sin(twistXAngle)
-        val twistedY = bentY * twistXCos - bentZ * twistXSin
-        val twistedZ = bentY * twistXSin + bentZ * twistXCos
-        val normalTwistedY = normalY * twistXCos - normalZ * twistXSin
-        val normalTwistedZ = normalY * twistXSin + normalZ * twistXCos
-
-        val twistYAngle = point.y * twistYAmount
-        val twistYCos = cos(twistYAngle)
-        val twistYSin = sin(twistYAngle)
-        val surfaceX = bentX * twistYCos + twistedZ * twistYSin
-        val surfaceY = twistedY
-        val surfaceZ = -bentX * twistYSin + twistedZ * twistYCos
-        val normalTwistedX = normalX
-        normalX = normalTwistedX * twistYCos + normalTwistedZ * twistYSin
-        normalY = normalTwistedY
-        normalZ = -normalTwistedX * twistYSin + normalTwistedZ * twistYCos
-
-        val rotatedY = surfaceY * rotationXCos - surfaceZ * rotationXSin
-        val rotatedZ = surfaceY * rotationXSin + surfaceZ * rotationXCos
-        val rotatedX2 = surfaceX * rotationYCos + rotatedZ * rotationYSin
-        val rotatedZ2 = -surfaceX * rotationYSin + rotatedZ * rotationYCos
-        val rotatedX = rotatedX2 * rotationZCos - rotatedY * rotationZSin
-        val rotatedY2 = rotatedX2 * rotationZSin + rotatedY * rotationZCos
-
-        val normalRotatedY = normalY * rotationXCos - normalZ * rotationXSin
-        val normalRotatedZ = normalY * rotationXSin + normalZ * rotationXCos
-        val normalRotatedX2 = normalX * rotationYCos + normalRotatedZ * rotationYSin
-        val normalRotatedZ2 = -normalX * rotationYSin + normalRotatedZ * rotationYCos
-        val normalRotatedX = normalRotatedX2 * rotationZCos -
-            normalRotatedY * rotationZSin
-        val normalRotatedY2 = normalRotatedX2 * rotationZSin +
-            normalRotatedY * rotationZCos
-
-        val perspective = 1f / (1f + rotatedZ2 * 0.12f).coerceAtLeast(0.72f)
-        positions[index] = Offset(
-            x = core.x + radius * rotatedX * perspective,
-            y = core.y + radius * rotatedY2 * perspective,
-        )
-
-        val lightDot = normalRotatedX * -0.34f +
-            normalRotatedY2 * -0.42f +
-            normalRotatedZ2 * 0.84f
-        val diffuse = max(lightDot, -lightDot * 0.62f).coerceIn(0f, 1f)
-        val facing = abs(normalRotatedZ2).coerceIn(0f, 1f)
-        val rim = (1f - facing).pow(2)
-        val lightShade = (0.38f + 0.62f * diffuse + rotatedZ2 * 0.04f)
-            .coerceIn(0.25f, 1f)
-        val radialShade = 0.64f + 0.36f * (1f - point.distance)
-        val shade = (lightShade * radialShade).coerceIn(0.20f, 1f)
-        val centerLight = smoothStep(
-            ((0.42f - point.distance) / 0.42f).coerceIn(0f, 1f),
-        )
-        val whiteMix = (
-            diffuse.pow(8) * 0.12f +
-                rim * 0.02f +
-                centerLight * (0.28f + rim * 0.34f)
-            ).coerceIn(0f, 0.58f)
-        val alpha = (spec.opacity * opacityScale * (0.80f + 0.20f * facing))
-            .coerceIn(0f, 1f)
-        colors[index] = Color(
-            red = (spec.color.red * shade * colorGain + whiteMix).coerceIn(0f, 1f),
-            green = (spec.color.green * shade * colorGain + whiteMix).coerceIn(0f, 1f),
-            blue = (spec.color.blue * shade * colorGain + whiteMix).coerceIn(0f, 1f),
-            alpha = alpha,
-        )
     }
-    val vertices = Vertices(
-        vertexMode = VertexMode.Triangles,
-        positions = positions,
-        textureCoordinates = DiscTextureCoordinates,
-        colors = colors,
-        indices = DiscIndices,
-    )
     drawContext.canvas.drawVertices(
-        vertices = vertices,
+        vertices = Vertices(
+            vertexMode = VertexMode.Triangles,
+            positions = positions,
+            textureCoordinates = PetalTextureCoordinates,
+            colors = colors,
+            indices = PetalIndices,
+        ),
+        // Combines vertex color with the white paint. Destination blend is paint.blendMode.
         blendMode = BlendMode.Modulate,
         paint = paint,
     )
 }
 
-private fun smoothStep(value: Float): Float = value * value * (3f - 2f * value)
+private data class Centerline(
+    val x: Float,
+    val y: Float,
+    val px: Float,
+    val py: Float,
+    val norm: Float,
+)
+
+private fun centerline(u: Float, bend: Float): Centerline {
+    if (abs(bend) < 0.001f) {
+        return Centerline(x = u, y = 0f, px = 0f, py = 1f, norm = 1f)
+    }
+    val angle = u * bend
+    val x = sin(angle) / bend
+    val y = (1f - cos(angle)) / bend
+    val tangentX = cos(angle)
+    val tangentY = sin(angle)
+    val endX = sin(bend) / bend
+    val endY = (1f - cos(bend)) / bend
+    val endRadius = sqrt(endX * endX + endY * endY).coerceAtLeast(0.0001f)
+    return Centerline(
+        x = x,
+        y = y,
+        px = -tangentY,
+        py = tangentX,
+        norm = 1f / endRadius,
+    )
+}
+
+private fun taperAt(u: Float, bulge: Float): Float {
+    // Wide through the middle, then a short run into a needle tip.
+    val along = abs(u)
+    val base = if (along <= 0.62f) {
+        1f - 0.18f * (along / 0.62f).pow(2f)
+    } else {
+        val t = (along - 0.62f) / 0.38f
+        0.82f * (1f - t).pow(1.45f)
+    }
+    return base * (1f + bulge * u * (1f - along)).coerceAtLeast(0f)
+}
+
+// t = 0 is the crisp flank, t = 1 is the soft flank.
+private fun alphaProfile(t: Float, softness: Float): Float {
+    val rise = 0.03f + 0.04f * softness
+    val crisp = smoothStep((t / rise).coerceIn(0f, 1f))
+    val fallStart = 0.16f + 0.10f * softness
+    val faded = 1f - smoothStep(((t - fallStart) / (1.02f - fallStart)).coerceIn(0f, 1f))
+    val tail = faded.pow(0.55f + 0.4f * (1f - softness))
+    val spine = exp(-((t - 0.12f).pow(2)) / (0.014f + 0.04f * softness))
+    val veil = crisp * tail
+    return (veil * (0.28f + 0.55f * softness) + spine * (0.90f - 0.45f * softness))
+        .coerceIn(0f, 1f)
+}
+
+private fun turbulence(u: Float, seed: Float, evoX: Float, evoY: Float): Float {
+    val n1 = sin(u * 2.1f + seed * 1.3f + evoX * 1.2f)
+    val n2 = sin(u * 3.7f + seed * 2.4f + evoY * 0.9f)
+    return (n1 * 0.75f + n2 * 0.25f).coerceIn(-1f, 1f)
+}
+
+private fun smoothStep(value: Float): Float {
+    val t = value.coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
+}
