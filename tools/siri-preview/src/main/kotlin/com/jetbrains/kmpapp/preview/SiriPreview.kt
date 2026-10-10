@@ -90,12 +90,13 @@ private fun renderStill(options: PreviewArgs) {
 @OptIn(ExperimentalComposeUiApi::class)
 private fun renderDemo(options: PreviewArgs) {
     var state by mutableStateOf(DemoStates.first())
+    var level by mutableStateOf(0.5f)
     ImageComposeScene(width = FrameSizePx, height = FrameSizePx) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             SiriOrb(
                 modifier = Modifier.fillMaxSize(),
                 state = state,
-                audioLevel = 0.72f,
+                audioLevel = level,
             )
         }
     }.use { scene ->
@@ -103,6 +104,10 @@ private fun renderDemo(options: PreviewArgs) {
             val seconds = index / options.fps
             val stateIndex = (seconds / options.seconds).toInt().coerceIn(0, DemoStates.lastIndex)
             state = DemoStates[stateIndex]
+            // Simulated speech envelope: syllables at ~4 Hz with phrase gaps.
+            val syl = kotlin.math.abs(kotlin.math.sin(seconds * 12.6)).toFloat()
+            val phrase = (0.5 + 0.5 * kotlin.math.sin(seconds * 2.1)).toFloat()
+            level = (0.15f + 0.85f * syl * phrase).coerceIn(0f, 1f)
             Snapshot.sendApplyNotifications()
             val nanos = (index * 1_000_000_000.0 / options.fps).toLong()
             val image = scene.render(nanos)

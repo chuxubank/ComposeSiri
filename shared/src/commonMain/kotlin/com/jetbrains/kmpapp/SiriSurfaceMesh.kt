@@ -393,7 +393,7 @@ private fun orbScale(phase: Float, audioLevel: Float, style: SiriOrbStyle): Floa
     // audioLevel 0..1 maps onto an amplitude of 0..100. A wobble keeps a
     // constant level visibly pulsing instead of a static zoom.
     val amplitude = audioLevel.coerceIn(0f, 1f) * 100f
-    val wobble = 0.55f + 0.45f * sin(phase * 5f)
+    val wobble = 0.8f + 0.2f * sin(phase * 5f)
     val delta = ((amplitude / 40f) - 1f) * wobble
     val pulse = style.pulseAmount * delta.coerceIn(-0.14f, 0.14f)
     return (style.sizeScale * (1f + pulse)).coerceAtLeast(0f)
