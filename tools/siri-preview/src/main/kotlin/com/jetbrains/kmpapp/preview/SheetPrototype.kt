@@ -30,6 +30,7 @@ uniform float uSideK;     // per-state core factor on the side-on boost
 uniform float uProc;      // processing blend 0..1: carousel of small solid ovals
 uniform float uOrbit;     // shared orbit angle (rad)
 uniform float uTangle;    // appear: 1 = twisted/compressed pose, 0 = unwound
+uniform float uBlend;     // body compositing: 0 = OVER (depth sorted), 1 = Screen
 
 const float PI = 3.14159265;
 
@@ -42,7 +43,7 @@ float3x3 rotZ(float a){ float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0,
 float profile(float u){
     float m = sin(clamp(u,0.0,1.0)*PI);
     float oval = sqrt(max(1.0 - (2.0*u-1.0)*(2.0*u-1.0), 0.0));
-    return mix(pow(m, 0.75) * (0.85 + 0.15*u), oval * 1.25, uProc);
+    return mix(pow(m, 0.75) * (0.85 + 0.15*u), pow(oval, 0.8) * (0.75 + 0.5*u) * 0.9, uProc);
 }
 
 // signed-ish distance to sheet k in its local frame; also returns (u, v) in uv
@@ -67,9 +68,13 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
 }
 
 half4 sheetColor(int k){
-    if (k == 0) return half4(1.0, 0.176, 0.333, 1);   // #FF2D55
-    if (k == 1) return half4(0.039, 0.518, 1.0, 1);   // #0A84FF
-    return half4(0.235, 0.878, 0.91, 1);              // #3CE0E8
+    // 4 main colours + 2 dimmer duplicates
+    if (k == 0) return half4(0.20, 0.90, 0.72, 1);    // green-teal #33E6B8
+    if (k == 1) return half4(0.039, 0.518, 1.0, 1);   // blue #0A84FF
+    if (k == 2) return half4(0.86, 0.25, 0.80, 1);    // pink-purple #DB40CC
+    if (k == 3) return half4(1.0, 0.70, 0.13, 1);     // orange-yellow #FFB321
+    if (k == 4) return half4(0.039, 0.518, 1.0, 1) * half4(0.6, 0.6, 0.6, 1);
+    return half4(0.20, 0.90, 0.72, 1) * half4(0.6, 0.6, 0.6, 1);
 }
 
 half4 main(float2 fc){
@@ -84,34 +89,41 @@ half4 main(float2 fc){
     float radial = 1.0 - smoothstep(0.80, 0.97, r);
     float q1 = 1.0 - uProc;
     float starBoost = 1.0 + 3.0 * q1 * uSideK * exp(-(r/0.2)*(r/0.2));
-    float dA = -1.0; float dB = -1.0; float dC = -1.0;
-    half4 cA = half4(0); half4 cB = half4(0); half4 cC = half4(0);
-    for (int k = 0; k < 3; k++) {
+    float dd6[6]; half4 cc6[6];
+    for (int j = 0; j < 6; j++) { dd6[j] = -1.0; cc6[j] = half4(0); }
+    for (int k = 0; k < 6; k++) {
         if (float(k) >= uCount) break;
         float fk = float(k);
         float t = uTime;
         // AE: time*45+value / -time*30+value deg/s, counter-rotating groups; wiggle(0.2,10/15)
         float spin = (mod(fk,2.0) < 0.5 ? 45.0 : -30.0) * PI/180.0;
         float wig = (sin(t*1.257 + fk*1.9) * 0.6 + sin(t*0.71 + fk*3.1) * 0.4) * uFlip;
-        float ws = k == 2 ? 0.8 : 1.0;
+        float ws = (k == 2 || k == 5) ? 0.8 : 1.0;
+        if (k >= 3) ws *= 0.85;
         // per-sheet X/Y/Z rates (deg/s), AE: time*30 / time*45 / -time*30 / -time*45
-        float3 rate = k == 0 ? float3(30.0, -45.0, 30.0) : (k == 1 ? float3(-45.0, 30.0, -30.0) : float3(45.0, 30.0, -45.0));
-        float3 off = k == 0 ? float3(0.3, 0.2, 0.0) : (k == 1 ? float3(1.4, 2.1, 1.1) : float3(2.6, 0.9, 2.2));
+        float3 rate = k == 0 ? float3(30.0, -45.0, 30.0) : (k == 1 ? float3(-45.0, 30.0, -30.0) : (k == 2 ? float3(45.0, 30.0, -45.0)
+                    : (k == 3 ? float3(-30.0, -45.0, 45.0) : (k == 4 ? float3(45.0, -30.0, 30.0) : float3(-45.0, 45.0, -30.0)))));
+        float3 off = k == 0 ? float3(0.3, 0.2, 0.0) : (k == 1 ? float3(1.4, 2.1, 1.1) : (k == 2 ? float3(2.6, 0.9, 2.2)
+                    : (k == 3 ? float3(0.9, 3.3, 4.0) : (k == 4 ? float3(3.7, 1.6, 0.5) : float3(5.1, 4.4, 2.9)))));
         float3 ang = off + rate * (PI/180.0) * uSpinT * 0.5 + float3(wig*0.35, wig*0.25, -wig*0.2);
         float tg = uTangle * (k == 1 ? -1.0 : 1.0);
         ang += float3(2.4, -1.9, 3.1) * tg;
         // processing: all sheets share one in-plane orientation, face the camera, orbit together
-        float slot = uOrbit + fk * 2.0943951;
-        ang = mix(ang, float3(0.0, 0.0, slot + 1.5708), uProc);
-        float sc = mix(1.0, 0.3, uProc);
-        float3 offW = 0.48 * uProc * float3(cos(slot), sin(slot), 0.0);
+        // processing: flat ovals, tangential, in one ring; group spins clockwise (uOrbit decreasing)
+        float slot = uOrbit + fk * 1.0471976;
+        float3 tgt = float3(0.0, 0.0, slot + 1.5708);
+        float3 dlt = ang - tgt;
+        dlt = dlt - 6.2831853 * floor((dlt + 3.14159265) / 6.2831853);   // shortest way round
+        ang = tgt + dlt * (1.0 - uProc);
+        float sc = mix(1.0, 0.095, uProc);   // drop length ~1/10 of diameter
+        float3 offW = 0.5 * uProc * float3(cos(slot), sin(slot), 0.0);
         float3x3 R = rotZ(ang.z) * rotY(ang.y) * rotX(ang.x);
         float3x3 Ri = float3x3(R[0][0],R[1][0],R[2][0], R[0][1],R[1][1],R[2][1], R[0][2],R[1][2],R[2][2]);
         // idle breathing: wiggle(0.2, 10/15) on twist and bend
         float br = sin(6.2832*0.2*t + fk*2.1), br2 = sin(6.2832*0.2*t + fk*1.3 + 1.0);
-        float twist = (1.4 + wig * 0.5 + 0.35*br + 5.0*uTangle) * q1;
-        float bend = (0.35 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.08 + 0.12*br2 + 0.9*uTangle) * q1;
-        ws = mix(ws, 0.75, uProc);
+        float twist = (1.4 + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1;   // wiggle(0.2, ~15 deg)
+        float bend = (0.35 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.08 + 0.2*br2 + 0.9*uTangle) * q1;
+        ws = mix(ws, 0.55, uProc);
         float3 o = Ri * ((ro - offW) / sc); float3 d = Ri * rd;
         float tt = length(o) - 1.5; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0);
         for (int i = 0; i < 72; i++) {
@@ -123,6 +135,7 @@ half4 main(float2 fc){
             if (tt > length(o) + 1.5) break;
         }
         half4 col = half4(pow(sheetColor(k).rgb, half3(2.2)), 1);
+        col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uProc));   // desaturate to grey-white
         if (hit) {
             float3 pos = o + d*tt; float2 tmp;
             float e = 0.002;
@@ -138,21 +151,28 @@ half4 main(float2 fc){
             float rim = smoothstep(0.86, 1.0, abs(uv.y)) * step(0.0, uv.y);
             // depth fog: far half fades to black (AE fog start 2700, range 1000)
             float z = (R * pos).z;
-            float fog = clamp(0.55 + 0.45*z/0.9, 0.0, 1.0);
+            float fog = pow(clamp(0.4 + 0.6*z/0.8, 0.0, 1.0), 1.6);   // stronger depth fade
+            fog = mix(fog, 1.0, uProc);
             float centre = 1.0 - smoothstep(0.15, 1.0, abs(2.0*uv.x - 1.0));
             float body = (0.18 + 0.82*centre) * (1.0 - fres) * (0.5 + 0.5*ring);
             float thinRim = pow(1.0 - ndv, 9.0);
             if (uPass < 0.5) {
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
-                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 3.0 * uSideK * uSideK * pow(1.0 - ndv, 2.0) * exp(-(r/0.20)*(r/0.20))) * (1.0 + 0.5 * fres);
+                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 3.0 * uSideK * uSideK * pow(1.0 - ndv, 2.0) * exp(-(r/0.20)*(r/0.20))) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
                 float a = mix(0.95, 0.4, v) * (1.0 - smoothstep(0.85, 1.0, v)) * (0.6 + 0.4*centre) * fog;
                 // solid hard-edged oval with a slight soft edge
-                float eo = 1.0 - smoothstep(0.86, 1.0, abs(uv.y));
-                bri = mix(bri, 0.9 + 0.25*fres, uProc);
-                a = mix(a, 0.97 * eo, uProc);
+                // feathered white disc -> soft oval when flat
+                float eo = 1.0 - smoothstep(0.45, 1.0, abs(uv.y));
+                bri = mix(bri, 0.85, uProc);
+                a = mix(a, 0.9 * eo, uProc);
                 half4 c4 = half4(col.rgb * half(bri), half(a));
-                if (k == 0) { dA = tt; cA = c4; } else if (k == 1) { dB = tt; cB = c4; } else { dC = tt; cC = c4; }
+                if (uBlend > 0.5) {
+                    half3 e = min(c4.rgb * c4.a, half3(1.0));
+                    acc = acc + e - acc * e;          // Screen
+                } else {
+                    for (int j = 0; j < 6; j++) { if (j == k) { dd6[j] = tt; cc6[j] = c4; } }
+                }
             } else {
                 // first hit only; far side attenuated by fog^2; tips fade radially
                 float vE = 1.0 - side;
@@ -167,13 +187,14 @@ half4 main(float2 fc){
             if (uPass > 0.5) acc += min(col.rgb * 1.35 + half3(0.12), half3(1.0)) * half(g*g*0.7*starBoost*q1);
         }
     }
-    if (uPass < 0.5) {
+    if (uPass < 0.5 && uBlend < 0.5) {
         // back-to-front OVER (largest ray distance first)
-        for (int s = 0; s < 3; s++) {
-            float dm = max(dA, max(dB, dC));
+        for (int s = 0; s < 6; s++) {
+            float dm = -1.0; float bi = -1.0;
+            for (int j = 0; j < 6; j++) { if (dd6[j] > dm) { dm = dd6[j]; bi = float(j); } }
             if (dm < 0.0) break;
-            half4 c4;
-            if (dm == dA) { c4 = cA; dA = -1.0; } else if (dm == dB) { c4 = cB; dB = -1.0; } else { c4 = cC; dC = -1.0; }
+            half4 c4 = half4(0);
+            for (int j = 0; j < 6; j++) { if (float(j) == bi) { c4 = cc6[j]; dd6[j] = -1.0; } }
             acc = c4.rgb * c4.a + acc * (1.0 - c4.a);
         }
     }
@@ -222,6 +243,7 @@ internal fun renderSheetStills(
         val t = i / fps
         val prm = paramsAt(i, t)
         if (i < (System.getenv("SKIP") ?: "0").toInt()) continue   // resume a partial render
+        if (i > (System.getenv("END") ?: "999999").toInt()) break
         fun pass(id: Float): org.jetbrains.skia.Image {
             val b = RuntimeShaderBuilder(effect)
             b.uniform("uSize", size.toFloat(), size.toFloat())
@@ -235,6 +257,7 @@ internal fun renderSheetStills(
             b.uniform("uProc", prm.proc)
             b.uniform("uOrbit", prm.orbit)
             b.uniform("uTangle", prm.tangle)
+            b.uniform("uBlend", (System.getenv("BLEND") ?: "1").toFloat())
             val surf = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
             surf.canvas.clear(Color.BLACK)
             surf.canvas.drawPaint(Paint().apply { this.shader = b.makeShader() })
@@ -251,7 +274,7 @@ internal fun renderSheetStills(
         val c = scene.canvas
         c.clear(Color.BLACK)
         c.drawImage(bodyImg, 0f, 0f, Paint().apply {
-            imageFilter = ImageFilter.makeBlur(radius * 0.06f, radius * 0.06f, FilterTileMode.DECAL)
+            imageFilter = ImageFilter.makeBlur(radius * (0.06f - 0.035f * prm.proc), radius * (0.06f - 0.035f * prm.proc), FilterTileMode.DECAL)
             blendMode = BlendMode.PLUS
         })
         c.drawImage(rimImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })
@@ -331,9 +354,17 @@ internal fun renderSheetStills(
         fc.restore()
         fc.drawCircle(cx, cx, radius, Paint().apply {
             mode = org.jetbrains.skia.PaintMode.STROKE
-            strokeWidth = 1.2f
-            color = ((0x59 * (prm.shell * (1f - prm.proc)).coerceIn(0f, 1f)).toInt() shl 24) or 0x4D2D44
+            strokeWidth = 1.6f
+            color = ((0x50 * (prm.shell * (1f - prm.proc)).coerceIn(0f, 1f)).toInt() shl 24) or 0x3FA8E0
             isAntiAlias = true
+            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, 1.5f)
+        })
+        fc.drawCircle(cx, cx, radius * 0.985f, Paint().apply {
+            mode = org.jetbrains.skia.PaintMode.STROKE
+            strokeWidth = radius * 0.02f
+            color = ((0x30 * (prm.shell * (1f - prm.proc)).coerceIn(0f, 1f)).toInt() shl 24) or 0x8A4FD0
+            isAntiAlias = true
+            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.012f)
         })
         val data = fin.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG)!!
         Files.write(outDir.resolve("$prefix%03d.png".format(i)), data.bytes)
@@ -341,14 +372,14 @@ internal fun renderSheetStills(
 }
 
 /** Six-state demo in the preview: eased params per state, synthetic voice envelope. */
-internal val SheetDemoStates = listOf("Appear" to 2.0, "Idle" to 3.0, "Listening" to 3.0, "Processing" to 4.0, "Result" to 3.5, "Disappear" to 2.0)
+internal val SheetDemoStates = listOf("Appear" to 1.5, "Idle" to 2.0, "Listening" to 2.5, "Processing" to 3.0, "Result" to 3.0, "Disappear" to 1.5)
 
 internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
     data class Target(val speed: Float, val flip: Float, val scale: Float, val core: Float)
     val tg = mapOf(
         "Appear" to Target(1.0f, 1.0f, 1.0f, 1.0f), "Idle" to Target(1.0f, 1.0f, 1.0f, 1.0f),
         "Listening" to Target(1.3f, 1.3f, 1.0f, 1.0f), "Processing" to Target(1.0f, 1.0f, 1.0f, 1.0f),
-        "Result" to Target(0.6f, 0.6f, 1.04f, 1.25f), "Disappear" to Target(1.0f, 1.0f, 0.0f, 0.0f),
+        "Result" to Target(0.8f, 0.8f, 1.0f, 1.1f), "Disappear" to Target(1.0f, 1.0f, 0.0f, 0.0f),
     )
     val starts = SheetDemoStates.runningFold(0.0) { a, b -> a + b.second }
     var sideK = 1.25f; var speed = 1f; var flip = 1f; var scale = 0.0f; var core = 0f; var spinT = 0f; var orbit = 0f
@@ -357,7 +388,7 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
     val ease = 1f - kotlin.math.exp(-dt / 0.35f)
     val labels = StringBuilder()
     val back = 1.0f   // Result: pieces pulled back to centre over 1.0 s, then flash + bounce
-    renderSheetStills(outDir, 3, fps, total, prefix = "d", paramsAt = { i, t ->
+    renderSheetStills(outDir, 6, fps, total, prefix = "d", paramsAt = { i, t ->
         val si = (starts.indexOfLast { it <= t }).coerceIn(0, SheetDemoStates.lastIndex)
         val name = SheetDemoStates[si].first; val st = tg.getValue(name)
         val tE = (t - starts[si]).toFloat()
@@ -372,22 +403,23 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
         } else 0f
         val burst = (voice - 0.1f).coerceAtLeast(0f) * 30f     // spin bursts on voice peaks
         spinT += (speed + burst) * dt
-        orbit += (2.0 * Math.PI * 0.9).toFloat() * dt
+        orbit -= (2.0 * Math.PI * 0.5).toFloat() * dt   // constant clockwise group spin
         val proc = when (name) {
-            "Processing" -> smoothstepF(0f, 1.5f, tE)
-            "Result" -> 1f - smoothstepF(0f, back, tE)
+            "Processing" -> smoothstepF(0f, 0.9f, tE)
+            "Result" -> 1f - smoothstepF(0f, 1.0f, tE)
             else -> 0f
         }
         labels.append("$i $name\n")
         var dScale = 0f; var dCore = 0f; var fade = 1f; var tangle = 0f
         when (name) {
             "Appear" -> { val e = smoothstepF(0f, 1f, tE); scale = e; tangle = 1f - e; fade = smoothstepF(0f, 0.4f, tE); core = e }
-            "Processing" -> dCore = 0.2f * kotlin.math.sin(2.0 * Math.PI * 1.5 * tE).toFloat()
             "Result" -> {
+                // reverse morph (1.0 s), then white flash 1.6 -> settle and spring bounce to ~1.08
                 val r = (tE - back).coerceAtLeast(0f)
-                if (tE < back) dCore = 0f else {
+                if (tE >= back) {
                     dCore = 0.35f * (1f - smoothstepF(0f, 0.4f, r))
-                    val sp = 1.04f + kotlin.math.exp(-4f * r) * (-0.19f * kotlin.math.cos(8f * r) - 0.05f * kotlin.math.sin(8f * r))
+                    val ex = kotlin.math.exp(-4f * r)
+                    val sp = 1.0f + 0.04f * (1f - ex * kotlin.math.cos(8f * r)) + 0.1f * ex * kotlin.math.sin(8f * r)   // peak ~1.08, settles 1.04
                     dScale = sp - scale
                 }
             }
