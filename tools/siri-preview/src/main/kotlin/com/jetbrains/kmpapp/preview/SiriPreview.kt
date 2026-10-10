@@ -57,6 +57,15 @@ private data class PreviewArgs(
 @OptIn(ExperimentalComposeUiApi::class)
 fun main(args: Array<String>) {
     System.setProperty("java.awt.headless", "true")
+    val sheetIdx = args.indexOf("--sheets")
+    if (sheetIdx >= 0) {
+        val outIdx = args.indexOf("--out")
+        renderSheetStills(
+            java.nio.file.Paths.get(if (outIdx >= 0) args[outIdx + 1] else "/tmp/sheet"),
+            args[sheetIdx + 1].toInt(), 1.0, 12.0,
+        )
+        return
+    }
     val options = parseArgs(args)
     options.outDir.createDirectories()
     if (options.demo) {

@@ -12,6 +12,7 @@ kotlin {
             include("**/SiriOrb.kt")
             include("**/SiriSurfaceMesh.kt")
             include("**/SiriPreview.kt")
+            include("**/SheetPrototype.kt")
         }
     }
 }
