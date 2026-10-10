@@ -131,25 +131,6 @@ private val Petals = listOf(
         seed = 0.4f,
     ),
     PetalSpec(
-        color = SiriRed,
-        group = PetalColorGroup.Red,
-        intensity = 0.94f,
-        halfLength = 404f,
-        halfWidth = 30f,
-        bendDeg = -76f,
-        twistDeg = 124f,
-        bias = -0.22f,
-        curl = 0.08f,
-        rotX = 76f,
-        rotY = -10f,
-        rotZ = 62f,
-        spinX = -2,
-        spinY = 1,
-        spinZ = -1,
-        shift = -1f,
-        seed = 1.35f,
-    ),
-    PetalSpec(
         color = SiriBlue,
         group = PetalColorGroup.Blue,
         intensity = 1f,
@@ -186,25 +167,6 @@ private val Petals = listOf(
         spinZ = 1,
         shift = -1f,
         seed = 3.15f,
-    ),
-    PetalSpec(
-        color = SiriBlue,
-        group = PetalColorGroup.Blue,
-        intensity = 0.84f,
-        halfLength = 416f,
-        halfWidth = 18f,
-        bendDeg = 96f,
-        twistDeg = 22f,
-        bias = 0.10f,
-        curl = -0.04f,
-        rotX = 96f,
-        rotY = -8f,
-        rotZ = 18f,
-        spinX = 2,
-        spinY = 0,
-        spinZ = -2,
-        shift = 1f,
-        seed = 4.45f,
     ),
     PetalSpec(
         color = SiriTeal,
@@ -712,7 +674,7 @@ private fun DrawScope.fillPetal(
                 // Colored halo on the bright lip. Kept tinted so it does not draw a white stroke.
                 val band = if (halfWidthPx < 2.6f) 1f else (1f - insetPx / BloomBandPx).coerceIn(0f, 1f)
                 val alpha = (band * energy * fog * shellFade * style.bloomAlpha * 0.72f).coerceIn(0f, 1f)
-                val glow = 0.38f
+                val glow = 0f
                 colors[vertex] = Color(
                     red = src.red + (1f - src.red) * glow,
                     green = src.green + (1f - src.green) * glow,
@@ -723,7 +685,8 @@ private fun DrawScope.fillPetal(
                 // the blade crosses the orb. The lip is the 1–2px hard edge.
                 val spine = centerline.pow(1.35f)
                 val streak = spine * (0.15f + 0.85f * heat)
-                val whiten = maxOf(streak * 0.36f, lip * 0.48f)
+                // One solid colour per blade; overlaps alone go white/pink.
+                val whiten = 0f
                 val shape = maxOf(0.97f, lip).coerceIn(0f, 1f)
                 val alpha = (shape * energy * fog * shellFade).coerceIn(0f, 1f)
                 colors[vertex] = Color(
