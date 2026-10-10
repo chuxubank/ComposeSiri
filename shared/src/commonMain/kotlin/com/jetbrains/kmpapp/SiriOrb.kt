@@ -67,14 +67,14 @@ internal data class SiriOrbStyle(
     val rotationScale: Float,
 )
 
-internal val SiriBlue = Color(0xFF0030FF)
+// Reference-frame samples: red peaks near #FF3847 / #FF2D3C, blue near #0080FF–#008DFF
+// (closer than royal #0030FF), teal near #00E0C0 (closer than pale #5AF0E0).
+internal val SiriBlue = Color(0xFF0A84FF)
 internal val SiriTeal = Color(0xFF00FFCC)
-internal val SiriRed = Color(0xFFFF1212)
-internal val SiriPink = Color(0xFFFF2A6D)
-internal val SiriPurple = Color(0xFF7A2CFF)
+internal val SiriRed = Color(0xFFFF2D55)
 
 /**
- * A Siri-inspired animated orb. Ribbons are feathered rings on twisted, bent planes.
+ * A Siri-inspired animated orb. Ribbons are thin blades that cross the center and taper to needles.
  *
  * [audioLevel] (0..1, mapped onto a Sound Keys amplitude of 0..100) drives a
  * world-scale pulse of amplitude/40 while [state] is [SiriOrbState.Listening],

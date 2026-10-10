@@ -1,7 +1,6 @@
 package com.jetbrains.kmpapp
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -11,64 +10,62 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.VertexMode
 import androidx.compose.ui.graphics.Vertices
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
+import kotlin.math.pow
 import kotlin.math.sin
 
 private const val TwoPi = 6.2831855f
+private const val Pi = 3.1415927f
 private const val DegreesToRadians = 0.017453292f
 
-// Cropped preview frame. The AE shell is the 922 ellipse on the 1440 precomp
-// (64% of that comp). In this frame the stroke sits near the outer edge of the
-// reference crop, about 86% of the canvas across, not a band that reaches the corners.
+// Cropped preview frame. The AE shell is the 922 ellipse on the 1440 precomp.
+// In this frame the stroke sits near the outer edge of the reference crop.
 private const val ShellRadiusFraction = 0.43f
 private const val ShellRadiusAe = 461f
 private const val CameraDistance = 2700f
-// Fog only the far side. The camera-facing face stays flat (lighting variation 0).
-private const val FogStart = 2760f
-private const val FogRange = 420f
-// Across-axis half extent of each ring plane, in AE units.
-// Cross-section half-width. Narrower than the shell so face-on ribbons leave
-// near-black gaps; edge-on twist still pinches them to a needle.
-private const val PlaneHalf = 210f
+// Dim only the far side. The camera-facing face stays bright.
+private const val FogStart = 2800f
+private const val FogRange = 520f
 
 // 0.2 Hz over a 17.117 s loop is 3.42 cycles. 3 cycles stays periodic and seamless.
 private const val WiggleCycles = 3f
 
-// time*80 deg/s is 3.80 revolutions per loop. 4 revolutions stays periodic.
-private const val TurbulenceCycles = 4f
-private const val TurbulenceFeatures = 19f
-private const val TurbulenceAmountAe = 7f
+// Bank around the long axis turns a blade edge-on without shortening it.
+// Pitch toward the camera stays smaller so the tips still reach the glass.
+private const val BankFlipDeg = 98f
+private const val PitchFlipDeg = 20f
 
-// AE wiggle(0.2, 15) on bend and wiggle(0.2, 10) on twist, in degrees.
-private const val BendWiggleDeg = 15f
-private const val TwistWiggleDeg = 10f
+// Bloom is a tight halo on the bright lip only, about 5% of the shell radius.
+private const val BloomRadiusFractionOfShell = 0.05f
+private const val LipPx = 1.7f
 
-// Polar annulus. The outer ring is the mesh boundary, so the crisp edge is a
-// smooth polyline instead of a cartesian grid cut by an alpha mask.
-// ~3px on the 870 preview so the sharp outer polyline does not read as teeth.
-private const val RingSegments = 840
-private const val RingBands = 14
-private const val RingNv = RingBands + 1
-private const val PetalVertexCount = RingSegments * RingNv
-private const val OuterRho = 0.985f
+private const val LengthSegments = 96
+private const val WidthSegments = 8
+private const val LengthVerts = LengthSegments + 1
+private const val WidthVerts = WidthSegments + 1
+private const val PetalVertexCount = LengthVerts * WidthVerts
+private const val MidColumn = LengthSegments / 2
+private const val MidRow = WidthSegments / 2
 
-private const val RimSegments = 160
-private const val RimColumns = RimSegments + 1
-private const val RimRowVerts = 3
-private const val RimVertexCount = RimColumns * RimRowVerts
+// Inset from the silhouette, in screen pixels. The outer band is the 1–2px lip.
+// The middle row is the centerline (clamped).
+private const val BloomBandPx = 6.5f
 
-// Element material: glossiness 0, lighting variation 0, environment exposure 2.
-// No specular and no lambert gradient. Exposure is a flat gain on the ribbon.
-private const val ExposureGain = 1.12f
+private val RowInsetPx = floatArrayOf(0f, LipPx, BloomBandPx, 26f, 10_000f, 26f, BloomBandPx, LipPx, 0f)
 
 private enum class PetalColorGroup {
     Red,
@@ -80,145 +77,166 @@ private data class PetalSpec(
     val color: Color,
     val group: PetalColorGroup,
     val intensity: Float,
+    val halfLength: Float,
+    val halfWidth: Float,
     val bendDeg: Float,
     val twistDeg: Float,
+    val bias: Float,
+    val curl: Float,
     val rotX: Float,
     val rotY: Float,
     val rotZ: Float,
     val spinX: Int,
     val spinY: Int,
     val spinZ: Int,
+    val shift: Float,
     val seed: Float,
 )
 
-// AE stroke #4D2D44. One soft line, not a stack of wide grey bands.
+// AE stroke #4D2D44, one pixel at low opacity. Not a grey band.
 private val RimColor = Color(0xFF4D2D44)
+private val RimHighlight = Color(0xFFFFD4E6)
 
-// Six planes. Spin counts are integer turns per 17.117 s loop so the standard
-// loop closes: +2 turns ≈ time*45 deg/s (42.1), -1 turn ≈ -time*30 deg/s (21.0).
+// Six blades. Spins are integer turns per 17.117 s loop.
+// spinX banks the sheet edge-on (length stays). spinZ yaws it in the glass.
+// Widths are a thin sheet. Rest banks are spread so the blades do not face
+// the camera together. Teal is one narrow blade.
 private val Petals = listOf(
     PetalSpec(
         color = SiriRed,
         group = PetalColorGroup.Red,
         intensity = 1f,
-        bendDeg = 228f,
-        twistDeg = 86f,
-        rotX = 52f,
-        rotY = -18f,
-        rotZ = -28f,
-        spinX = 0,
-        spinY = 2,
-        spinZ = 0,
+        halfLength = 430f,
+        halfWidth = 46f,
+        bendDeg = 70f,
+        twistDeg = 62f,
+        bias = 0.18f,
+        curl = 0.06f,
+        rotX = 12f,
+        rotY = 6f,
+        rotZ = -24f,
+        spinX = 2,
+        spinY = 0,
+        spinZ = 1,
+        shift = 1f,
         seed = 0.4f,
+    ),
+    PetalSpec(
+        color = SiriRed,
+        group = PetalColorGroup.Red,
+        intensity = 0.94f,
+        halfLength = 404f,
+        halfWidth = 30f,
+        bendDeg = -76f,
+        twistDeg = 124f,
+        bias = -0.22f,
+        curl = 0.08f,
+        rotX = 76f,
+        rotY = -10f,
+        rotZ = 62f,
+        spinX = -2,
+        spinY = 1,
+        spinZ = -1,
+        shift = -1f,
+        seed = 1.35f,
     ),
     PetalSpec(
         color = SiriBlue,
         group = PetalColorGroup.Blue,
         intensity = 1f,
-        bendDeg = 206f,
-        twistDeg = 188f,
-        rotX = 68f,
-        rotY = 16f,
-        rotZ = 36f,
-        spinX = -1,
+        halfLength = 440f,
+        halfWidth = 42f,
+        bendDeg = 88f,
+        twistDeg = -54f,
+        bias = 0.08f,
+        curl = -0.05f,
+        rotX = 28f,
+        rotY = 8f,
+        rotZ = 142f,
+        spinX = 1,
         spinY = 0,
-        spinZ = 0,
-        seed = 1.35f,
-    ),
-    PetalSpec(
-        color = SiriTeal,
-        group = PetalColorGroup.Teal,
-        intensity = 0.9f,
-        bendDeg = -220f,
-        twistDeg = -110f,
-        rotX = 44f,
-        rotY = 54f,
-        rotZ = 8f,
-        spinX = 0,
-        spinY = 0,
-        spinZ = -1,
+        spinZ = 2,
+        shift = 1f,
         seed = 2.25f,
     ),
     PetalSpec(
-        color = SiriTeal,
-        group = PetalColorGroup.Teal,
-        intensity = 0.50f,
-        bendDeg = 188f,
-        twistDeg = 200f,
-        rotX = 80f,
-        rotY = 10f,
-        rotZ = 122f,
-        spinX = 0,
-        spinY = 0,
-        spinZ = 2,
+        color = SiriBlue,
+        group = PetalColorGroup.Blue,
+        intensity = 0.92f,
+        halfLength = 392f,
+        halfWidth = 26f,
+        bendDeg = -54f,
+        twistDeg = 138f,
+        bias = -0.16f,
+        curl = 0.07f,
+        rotX = 84f,
+        rotY = 12f,
+        rotZ = 206f,
+        spinX = -1,
+        spinY = -1,
+        spinZ = 1,
+        shift = -1f,
         seed = 3.15f,
     ),
     PetalSpec(
-        color = SiriPink,
-        group = PetalColorGroup.Red,
-        intensity = 0.28f,
-        bendDeg = 200f,
-        twistDeg = 140f,
-        rotX = -36f,
-        rotY = 26f,
-        rotZ = 208f,
-        spinX = 1,
+        color = SiriBlue,
+        group = PetalColorGroup.Blue,
+        intensity = 0.84f,
+        halfLength = 416f,
+        halfWidth = 18f,
+        bendDeg = 96f,
+        twistDeg = 22f,
+        bias = 0.10f,
+        curl = -0.04f,
+        rotX = 96f,
+        rotY = -8f,
+        rotZ = 18f,
+        spinX = 2,
         spinY = 0,
-        spinZ = 0,
+        spinZ = -2,
+        shift = 1f,
         seed = 4.45f,
     ),
     PetalSpec(
-        color = SiriPurple,
-        group = PetalColorGroup.Blue,
-        intensity = 0.22f,
-        bendDeg = -198f,
-        twistDeg = -186f,
-        rotX = 62f,
-        rotY = -26f,
-        rotZ = 252f,
-        spinX = 0,
-        spinY = -2,
-        spinZ = 0,
+        color = SiriTeal,
+        group = PetalColorGroup.Teal,
+        intensity = 0.80f,
+        halfLength = 400f,
+        halfWidth = 20f,
+        bendDeg = -64f,
+        twistDeg = -96f,
+        bias = -0.12f,
+        curl = 0.06f,
+        rotX = 50f,
+        rotY = 10f,
+        rotZ = 258f,
+        spinX = -2,
+        spinY = 1,
+        spinZ = 1,
+        shift = -1f,
         seed = 5.6f,
     ),
 )
 
 private val PetalIndices: List<Int> = buildList {
-    fun id(i: Int, j: Int) = i * RingNv + j
-    for (i in 0 until RingSegments) {
-        val next = (i + 1) % RingSegments
-        for (j in 0 until RingBands) {
-            val a = id(i, j)
-            val b = id(next, j)
-            val c = id(next, j + 1)
-            val d = id(i, j + 1)
-            add(a); add(b); add(c)
-            add(a); add(c); add(d)
+    for (i in 0 until LengthSegments) {
+        val row = i * WidthVerts
+        val next = row + WidthVerts
+        for (j in 0 until WidthSegments) {
+            val a = row + j
+            val b = a + 1
+            val c = next + j
+            val d = c + 1
+            add(a); add(c); add(b)
+            add(b); add(c); add(d)
         }
     }
 }
 
 private val PetalTextureCoordinates: List<Offset> = List(PetalVertexCount) { index ->
-    val i = index / RingNv
-    val j = index - i * RingNv
-    Offset(i.toFloat() / RingSegments, j.toFloat() / RingBands)
-}
-
-private val RimIndices: List<Int> = buildList {
-    for (segment in 0 until RimSegments) {
-        val row = segment * RimRowVerts
-        val next = row + RimRowVerts
-        add(row); add(next); add(row + 1)
-        add(row + 1); add(next); add(next + 1)
-        add(row + 1); add(next + 1); add(row + 2)
-        add(row + 2); add(next + 1); add(next + 2)
-    }
-}
-
-private val RimTextureCoordinates: List<Offset> = List(RimVertexCount) { index ->
-    val column = index / RimRowVerts
-    val row = index - column * RimRowVerts
-    Offset(column.toFloat() / RimSegments, row.toFloat() / 2f)
+    val i = index / WidthVerts
+    val j = index - i * WidthVerts
+    Offset(i.toFloat() / LengthSegments, j.toFloat() / WidthSegments)
 }
 
 /**
@@ -261,8 +279,7 @@ internal fun SiriOrbVisual(
         List(Petals.size) { MutableList(PetalVertexCount) { Color.Transparent } }
     }
     val petalDepth = remember { FloatArray(Petals.size) }
-    val rimPositions = remember { MutableList(RimVertexCount) { Offset.Zero } }
-    val rimColors = remember { MutableList(RimVertexCount) { Color.Transparent } }
+    val rayAngle = remember { FloatArray(Petals.size) }
     val screenPaint = remember {
         Paint().apply {
             color = Color.White
@@ -270,7 +287,7 @@ internal fun SiriOrbVisual(
             blendMode = BlendMode.Screen
         }
     }
-    val rimPaint = remember {
+    val petalPaint = remember {
         Paint().apply {
             color = Color.White
             isAntiAlias = true
@@ -279,9 +296,9 @@ internal fun SiriOrbVisual(
     }
     val turns = spinClock.advance(phaseState.value, style.rotationScale)
 
-    // Blur only the glow copy. The base petals stay sharp.
     BoxWithConstraints(modifier) {
-        val glowBlur = maxWidth * 0.010f
+        val glowBlur = maxWidth * ShellRadiusFraction * BloomRadiusFractionOfShell *
+            style.bloomScale.coerceIn(0.35f, 1.4f)
         Canvas(
             Modifier
                 .fillMaxSize()
@@ -289,19 +306,21 @@ internal fun SiriOrbVisual(
         ) {
             val phase = phaseState.value
             val shell = shellRadius(phase, audioLevel, style)
-            if (shell < 1f) return@Canvas
+            if (shell < 1f || style.bloomAlpha <= 0.001f) return@Canvas
             val focal = shell * CameraDistance / ShellRadiusAe
             drawPetals(
                 phase = phase,
                 style = style,
                 turns = turns,
-                colorScale = 0.08f,
+                edgesOnly = true,
                 positions = petalPositions,
                 colors = petalColors,
                 depth = petalDepth,
+                rayAngle = rayAngle,
                 focal = focal,
                 shell = shell,
                 paint = screenPaint,
+                layerPaint = null,
             )
         }
         Canvas(Modifier.fillMaxSize()) {
@@ -313,16 +332,19 @@ internal fun SiriOrbVisual(
                 phase = phase,
                 style = style,
                 turns = turns,
-                colorScale = 1f,
+                edgesOnly = false,
                 positions = petalPositions,
                 colors = petalColors,
                 depth = petalDepth,
+                rayAngle = rayAngle,
                 focal = focal,
                 shell = shell,
-                paint = screenPaint,
+                paint = petalPaint,
+                layerPaint = screenPaint,
             )
-            drawCore(shell, style)
-            drawRim(phase, shell, style, rimPositions, rimColors, rimPaint)
+            drawCore(shell, phase, style)
+            drawStarRays(shell, phase, rayAngle, style)
+            drawRim(shell, style)
         }
     }
 }
@@ -342,28 +364,27 @@ private fun orbScale(phase: Float, audioLevel: Float, style: SiriOrbStyle): Floa
     return (style.sizeScale * (1f + pulse)).coerceAtLeast(0f)
 }
 
-private fun DrawScope.drawCore(shell: Float, style: SiriOrbStyle) {
+private fun DrawScope.drawCore(shell: Float, phase: Float, style: SiriOrbStyle) {
     val whiteMix = 1f - style.errorAmount
     val coreColor = Color(
         red = 1f * whiteMix + SiriRed.red * style.errorAmount,
         green = 1f * whiteMix + SiriRed.green * style.errorAmount,
         blue = 1f * whiteMix + SiriRed.blue * style.errorAmount,
     )
-    // Overlap glow. It fades when petals separate, and the alpha falls the
-    // whole way out so the center is a soft white, not a flat disk.
-    val overlap = (1f - style.separation * 0.72f).coerceIn(0.2f, 1f)
-    val alpha = (style.bloomAlpha * style.opacityScale * overlap).coerceIn(0f, 1.2f)
+    // About 40% of the previous 0.74-shell feather. Soft inside that footprint
+    // only, so the rest of the glass stays black.
+    val overlap = (1f - style.separation * 0.8f).coerceIn(0.15f, 1f)
+    val breathe = 0.94f + 0.06f * sin(phase * 2f)
+    val alpha = (style.bloomAlpha * style.opacityScale * overlap * breathe).coerceIn(0f, 1.15f)
     if (alpha <= 0.001f) return
-    val featherRadius = shell * 0.74f * style.bloomScale.coerceIn(0.25f, 1.4f)
+    val featherRadius = shell * 0.30f * style.bloomScale.coerceIn(0.25f, 1.4f)
     drawCircle(
         brush = Brush.radialGradient(
             colorStops = arrayOf(
-                0.00f to coreColor.copy(alpha = 0.98f * alpha),
-                0.16f to coreColor.copy(alpha = 0.90f * alpha),
-                0.32f to coreColor.copy(alpha = 0.66f * alpha),
-                0.50f to coreColor.copy(alpha = 0.32f * alpha),
-                0.70f to coreColor.copy(alpha = 0.09f * alpha),
-                0.88f to coreColor.copy(alpha = 0.02f * alpha),
+                0.00f to coreColor.copy(alpha = 0.82f * alpha),
+                0.22f to coreColor.copy(alpha = 0.46f * alpha),
+                0.48f to coreColor.copy(alpha = 0.14f * alpha),
+                0.74f to coreColor.copy(alpha = 0.03f * alpha),
                 1.00f to Color.Transparent,
             ),
             center = center,
@@ -375,48 +396,66 @@ private fun DrawScope.drawCore(shell: Float, style: SiriOrbStyle) {
     )
 }
 
-private fun DrawScope.drawRim(
-    phase: Float,
+private fun DrawScope.drawStarRays(
     shell: Float,
+    phase: Float,
+    angles: FloatArray,
     style: SiriOrbStyle,
-    position: MutableList<Offset>,
-    color: MutableList<Color>,
-    rimPaint: Paint,
 ) {
+    val cover = (style.opacityScale * (1f - style.separation * 0.65f)).coerceIn(0f, 1.15f)
+    if (cover <= 0.001f) return
+    val whiteMix = 1f - style.errorAmount
+    val tint = Color(
+        red = 1f * whiteMix + SiriRed.red * style.errorAmount,
+        green = 1f * whiteMix + SiriRed.green * style.errorAmount,
+        blue = 1f * whiteMix + SiriRed.blue * style.errorAmount,
+    )
+    for (index in angles.indices) {
+        val flick = 0.78f + 0.22f * sin(phase * 4f + index * 1.7f + Petals[index].seed)
+        val length = shell * 0.60f * (0.90f + 0.10f * flick)
+        val rayAlpha = (0.40f * flick * cover).coerceIn(0f, 0.55f)
+        if (rayAlpha <= 0.01f) continue
+        val angle = angles[index]
+        val end = Offset(
+            center.x + cos(angle) * length,
+            center.y + sin(angle) * length,
+        )
+        drawLine(
+            brush = Brush.linearGradient(
+                0f to tint.copy(alpha = rayAlpha),
+                0.35f to tint.copy(alpha = rayAlpha * 0.55f),
+                1f to Color.Transparent,
+                start = center,
+                end = end,
+            ),
+            start = center,
+            end = end,
+            strokeWidth = 1.35f,
+            cap = StrokeCap.Round,
+            blendMode = BlendMode.Screen,
+        )
+    }
+}
+
+private fun DrawScope.drawRim(shell: Float, style: SiriOrbStyle) {
     val alphaScale = style.opacityScale.coerceIn(0f, 1.2f)
     if (alphaScale <= 0.001f) return
-    val evolution = phase * TurbulenceCycles
-    val amountPx = TurbulenceAmountAe * shell / ShellRadiusAe
-    // Thin soft plum stroke. halfWidth is a few percent of the shell, not a band.
-    val half = shell * 0.010f
-    val peak = 0.22f
-    var vertex = 0
-    for (column in 0..RimSegments) {
-        val angle = column.toFloat() / RimSegments * TwoPi
-        val wobble = turbulence(angle, evolution)
-        val radius = shell + wobble * amountPx * 0.65f
-        val radii = floatArrayOf(radius - half, radius, radius + half)
-        val weights = floatArrayOf(0f, 1f, 0f)
-        for (row in 0 until RimRowVerts) {
-            val alpha = (peak * weights[row] * alphaScale).coerceIn(0f, 1f)
-            position[vertex] = Offset(
-                center.x + cos(angle) * radii[row],
-                center.y + sin(angle) * radii[row],
-            )
-            color[vertex] = RimColor.withAlpha(alpha)
-            vertex++
-        }
-    }
-    drawContext.canvas.drawVertices(
-        vertices = Vertices(
-            vertexMode = VertexMode.Triangles,
-            positions = position,
-            textureCoordinates = RimTextureCoordinates,
-            colors = color,
-            indices = RimIndices,
-        ),
-        blendMode = BlendMode.Modulate,
-        paint = rimPaint,
+    drawCircle(
+        color = RimColor.copy(alpha = 0.20f * alphaScale.coerceAtMost(1f)),
+        radius = shell,
+        center = center,
+        style = Stroke(width = 1.15f),
+    )
+    // Fixed in camera space: a short specular kiss on the upper-left glass.
+    val arc = shell * 2f
+    drawArc(
+        color = RimHighlight.copy(alpha = 0.34f * alphaScale.coerceAtMost(1f)),
+        startAngle = 214f,
+        sweepAngle = 40f,
+        useCenter = false,
+        topLeft = Offset(center.x - shell, center.y - shell),
+        size = Size(arc, arc),
+        style = Stroke(width = 1.7f, cap = StrokeCap.Round),
     )
 }
 
@@ -424,13 +463,15 @@ private fun DrawScope.drawPetals(
     phase: Float,
     style: SiriOrbStyle,
     turns: Float,
-    colorScale: Float,
+    edgesOnly: Boolean,
     positions: List<MutableList<Offset>>,
     colors: List<MutableList<Color>>,
     depth: FloatArray,
+    rayAngle: FloatArray,
     focal: Float,
     shell: Float,
     paint: Paint,
+    layerPaint: Paint?,
 ) {
     Petals.forEachIndexed { index, spec ->
         depth[index] = fillPetal(
@@ -438,15 +479,23 @@ private fun DrawScope.drawPetals(
             phase = phase,
             style = style,
             turns = turns,
-            colorScale = colorScale,
+            edgesOnly = edgesOnly,
             positions = positions[index],
             colors = colors[index],
             focal = focal,
             shell = shell,
+            angleOut = rayAngle,
+            angleIndex = index,
         )
     }
     val order = depth.indices.sortedByDescending { depth[it] }
+    val layerBounds = Rect(0f, 0f, size.width, size.height)
     for (index in order) {
+        // One layer per blade so shared triangle edges do not screen with themselves.
+        // The layer then screens onto the orb, and overlaps go white and pink.
+        if (layerPaint != null) {
+            drawContext.canvas.saveLayer(layerBounds, layerPaint)
+        }
         drawContext.canvas.drawVertices(
             vertices = Vertices(
                 vertexMode = VertexMode.Triangles,
@@ -458,6 +507,9 @@ private fun DrawScope.drawPetals(
             blendMode = BlendMode.Modulate,
             paint = paint,
         )
+        if (layerPaint != null) {
+            drawContext.canvas.restore()
+        }
     }
 }
 
@@ -466,136 +518,263 @@ private fun DrawScope.fillPetal(
     phase: Float,
     style: SiriOrbStyle,
     turns: Float,
-    colorScale: Float,
+    edgesOnly: Boolean,
     positions: MutableList<Offset>,
     colors: MutableList<Color>,
     focal: Float,
     shell: Float,
+    angleOut: FloatArray,
+    angleIndex: Int,
 ): Float {
     val motion = style.motionScale.coerceIn(0f, 1.6f)
-    val bendWiggle = loopWiggle(phase, spec.seed) * BendWiggleDeg * motion
-    val twistWiggle = loopWiggle(phase, spec.seed + 1.7f) * TwistWiggleDeg * motion
-    val open = 1f - style.separation * 0.46f
-    val bendDeg = spec.bendDeg * open + bendWiggle
+    val bendWiggle = loopWiggle(phase, spec.seed) * 20f * motion
+    val twistWiggle = loopWiggle(phase, spec.seed + 1.7f) * 26f * motion
+    val flipX = loopWiggle(phase, spec.seed + 2.2f) * BankFlipDeg * motion
+    val flipY = loopWiggle(phase, spec.seed + 4.1f) * PitchFlipDeg * motion
+    val bendDeg = spec.bendDeg + bendWiggle
     val twistDeg = spec.twistDeg + twistWiggle
-    val rotX = (spec.rotX + spec.spinX * 360f * turns + bendWiggle * 0.22f) * DegreesToRadians
-    val rotY = (spec.rotY + spec.spinY * 360f * turns) * DegreesToRadians
+    val rotX = (spec.rotX + spec.spinX * 360f * turns + flipX) * DegreesToRadians
+    val rotY = (spec.rotY + spec.spinY * 360f * turns + flipY) * DegreesToRadians
     val rotZ = (spec.rotZ + spec.spinZ * 360f * turns) * DegreesToRadians
     val weight = when (spec.group) {
         PetalColorGroup.Red -> style.redWeight
         PetalColorGroup.Blue -> style.blueWeight
         PetalColorGroup.Teal -> style.tealWeight
     }
-    val spread = 1f + style.separation * 0.16f
-    val push = style.separation * 150f
-    val intensity = spec.intensity * style.opacityScale * weight * ExposureGain
+    val spread = 1f + style.separation * 0.22f
+    val push = style.separation * spec.shift * 230f
+    val halfWidth = spec.halfWidth * (1f + style.fill * 0.18f)
+    val driftX = loopWiggle(phase, spec.seed + 6f) * 16f * motion
+    val driftY = loopWiggle(phase, spec.seed + 8f) * 14f * motion
+    val energy = spec.intensity * weight * style.opacityScale
     val rotXCos = cos(rotX)
     val rotXSin = sin(rotX)
     val rotYCos = cos(rotY)
     val rotYSin = sin(rotY)
     val rotZCos = cos(rotZ)
     val rotZSin = sin(rotZ)
+    val local = FloatArray(3)
+    val edgeNeg = FloatArray(3)
+    val edgePos = FloatArray(3)
+    val midPoint = FloatArray(3)
 
     var depthSum = 0f
-    var vertex = 0
-    for (i in 0 until RingSegments) {
-        val theta = i.toFloat() / RingSegments * TwoPi
-        val around = cos(theta)
-        val across = sin(theta)
-        for (j in 0..RingBands) {
-            val rho = j.toFloat() / RingBands * OuterRho
-            val u = rho * around
-            val v = rho * across
-            val local = bendTwist(u, v, bendDeg, twistDeg)
-            val x0 = local[0] * spread + push
-            val y0 = local[1] * spread
-            val z0 = local[2] * spread
+    var midX = center.x
+    var midY = center.y
+    var posX = center.x
+    var posY = center.y
+    var posW = 0f
+    var negX = center.x
+    var negY = center.y
+    var negW = 0f
 
-            val y1 = y0 * rotXCos - z0 * rotXSin
-            val z1 = y0 * rotXSin + z0 * rotXCos
-            val x2 = x0 * rotYCos + z1 * rotYSin
-            val z2 = -x0 * rotYSin + z1 * rotYCos
-            val x3 = x2 * rotZCos - y1 * rotZSin
-            val y3 = x2 * rotZSin + y1 * rotZCos
+    for (i in 0 until LengthVerts) {
+        val s = -1f + 2f * i / LengthSegments
+        val taper = taperOf(s, spec.bias)
+        projectRibbon(s, -1f, spec, halfWidth, bendDeg, twistDeg, spread, push, driftX, driftY, rotXCos, rotXSin, rotYCos, rotYSin, rotZCos, rotZSin, focal, local, edgeNeg)
+        projectRibbon(s, 1f, spec, halfWidth, bendDeg, twistDeg, spread, push, driftX, driftY, rotXCos, rotXSin, rotYCos, rotYSin, rotZCos, rotZSin, focal, local, edgePos)
+        projectRibbon(s, 0f, spec, halfWidth, bendDeg, twistDeg, spread, push, driftX, driftY, rotXCos, rotXSin, rotYCos, rotYSin, rotZCos, rotZSin, focal, local, midPoint)
+        val halfWidthPx = 0.5f * (hypot(edgePos[0] - midPoint[0], edgePos[1] - midPoint[1]) +
+            hypot(edgeNeg[0] - midPoint[0], edgeNeg[1] - midPoint[1]))
+        val geoHalf = halfWidth * taper
+        val edgeOn = geoHalf > 8f && halfWidthPx < 1.7f
+        if (i == MidColumn) {
+            midX = midPoint[0]
+            midY = midPoint[1]
+        } else if (i == (LengthSegments * 0.16f).toInt()) {
+            negX = midPoint[0]
+            negY = midPoint[1]
+            negW = halfWidthPx
+        } else if (i == (LengthSegments * 0.84f).toInt()) {
+            posX = midPoint[0]
+            posY = midPoint[1]
+            posW = halfWidthPx
+        }
 
-            // +z points at the camera. Depth increases away from it, matching AE fog.
-            val depth = CameraDistance - z2
-            val safeDepth = depth.coerceAtLeast(420f)
-            val projection = focal / safeDepth
-            val screenX = center.x + x3 * projection
-            val screenY = center.y - y3 * projection
-            positions[vertex] = Offset(screenX, screenY)
+        val tangentX: Float
+        val tangentY: Float
+        if (edgeOn) {
+            val neighbor = if (i < LengthSegments) i + 1 else i - 1
+            val ns = -1f + 2f * neighbor / LengthSegments
+            projectRibbon(ns, 0f, spec, halfWidth, bendDeg, twistDeg, spread, push, driftX, driftY, rotXCos, rotXSin, rotYCos, rotYSin, rotZCos, rotZSin, focal, local, edgeNeg)
+            tangentX = edgeNeg[0] - midPoint[0]
+            tangentY = edgeNeg[1] - midPoint[1]
+        } else {
+            tangentX = 0f
+            tangentY = 0f
+        }
+        val tangentLen = hypot(tangentX, tangentY).coerceAtLeast(0.001f)
+        val normalX = -tangentY / tangentLen
+        val normalY = tangentX / tangentLen
+        val hairline = if (edgeOn) (0.85f - halfWidthPx * 0.5f).coerceAtLeast(0f) else 0f
 
-            val fogT = ((depth - FogStart) / FogRange).coerceIn(0f, 1f)
-            val fog = 1f - smoothStep(fogT)
-            val projected = hypot(screenX - center.x, screenY - center.y) / shell
-            // Clip only past the shell. The ribbon's own edge stays sharp inside it.
-            val shellFade = 1f - smoothStep(((projected - 1.01f) / 0.035f).coerceIn(0f, 1f))
-            val mask = ringMask(u, v, style.fill)
-            // One crisp lip on the outer ring. The body stays the petal color and
-            // feathers inward; it is not a second white band.
-            val lip = when {
-                j == RingBands -> 1f
-                j == RingBands - 1 -> 0.22f
+        for (j in 0 until WidthVerts) {
+            val side = when {
+                j < MidRow -> -1f
+                j > MidRow -> 1f
                 else -> 0f
             }
-            val coverage = mask.coverage
-            val alpha = (coverage * intensity * fog * shellFade * colorScale).coerceIn(0f, 1f)
-            val whiten = lip * 0.42f
+            val insetRequest = RowInsetPx[j]
+            val insetPx = when {
+                side == 0f -> halfWidthPx
+                halfWidthPx < 0.6f -> 0f
+                else -> insetRequest.coerceAtMost(halfWidthPx * 0.97f)
+            }
+            val t = when {
+                side == 0f -> 0f
+                halfWidthPx < 0.6f -> side
+                else -> side * (1f - insetPx / halfWidthPx)
+            }
+            projectRibbon(s, t, spec, halfWidth, bendDeg, twistDeg, spread, push, driftX, driftY, rotXCos, rotXSin, rotYCos, rotYSin, rotZCos, rotZSin, focal, local, edgePos)
+            var sx = edgePos[0]
+            var sy = edgePos[1]
+            val depth = edgePos[2]
+            if (hairline > 0f && (j == 0 || j == WidthSegments)) {
+                val sign = if (j == 0) -1f else 1f
+                sx += normalX * sign * hairline
+                sy += normalY * sign * hairline
+            }
+            val vertex = i * WidthVerts + j
+            positions[vertex] = Offset(sx, sy)
+
+            val centerline = if (halfWidthPx < 1f) 0f else (insetPx / halfWidthPx).coerceIn(0f, 1f)
+            val lip = if (halfWidthPx < 2.3f) {
+                1f
+            } else {
+                (1f - insetPx / LipPx).coerceIn(0f, 1f)
+            }
+            val along = abs(s)
+            val heat = (1f - along).pow(1.35f)
+            val projected = hypot(sx - center.x, sy - center.y) / shell
+            val shellFade = 1f - smoothStep(((projected - 0.985f) / 0.02f).coerceIn(0f, 1f))
+            val fogT = ((depth - FogStart) / FogRange).coerceIn(0f, 1f)
+            val fog = 1f - 0.45f * smoothStep(fogT)
             val src = spec.color
-            colors[vertex] = Color(
-                red = src.red + (1f - src.red) * whiten,
-                green = src.green + (1f - src.green) * whiten,
-                blue = src.blue + (1f - src.blue) * whiten,
-            ).withAlpha(alpha)
+            if (edgesOnly) {
+                // Colored halo on the bright lip. Kept tinted so it does not draw a white stroke.
+                val band = if (halfWidthPx < 2.6f) 1f else (1f - insetPx / BloomBandPx).coerceIn(0f, 1f)
+                val alpha = (band * energy * fog * shellFade * style.bloomAlpha * 0.72f).coerceIn(0f, 1f)
+                val glow = 0.38f
+                colors[vertex] = Color(
+                    red = src.red + (1f - src.red) * glow,
+                    green = src.green + (1f - src.green) * glow,
+                    blue = src.blue + (1f - src.blue) * glow,
+                ).withAlpha(alpha)
+            } else {
+                // Saturated sheet. The hot streak is only the spine, stronger where
+                // the blade crosses the orb. The lip is the 1–2px hard edge.
+                val spine = centerline.pow(1.35f)
+                val streak = spine * (0.15f + 0.85f * heat)
+                val whiten = maxOf(streak * 0.36f, lip * 0.48f)
+                val shape = maxOf(0.97f, lip).coerceIn(0f, 1f)
+                val alpha = (shape * energy * fog * shellFade).coerceIn(0f, 1f)
+                colors[vertex] = Color(
+                    red = src.red + (1f - src.red) * whiten,
+                    green = src.green + (1f - src.green) * whiten,
+                    blue = src.blue + (1f - src.blue) * whiten,
+                ).withAlpha(alpha)
+            }
             depthSum += depth
-            vertex++
         }
     }
+
+    val aimPos = posW >= negW
+    val aimX = if (aimPos) posX else negX
+    val aimY = if (aimPos) posY else negY
+    angleOut[angleIndex] = atan2(aimY - midY, aimX - midX)
     return depthSum / PetalVertexCount
 }
 
-/**
- * Ring plane wrapped onto an arc. u = 0 faces the camera; the ends swing behind
- * it so depth fog can hide them. Twist spins the cross-section around the arc
- * so a large twist pinches the ribbon to an edge-on needle.
- */
-private fun bendTwist(u: Float, v: Float, bendDeg: Float, twistDeg: Float): FloatArray {
-    val bend = bendDeg * DegreesToRadians
-    if (abs(bend) < 0.001f) {
-        return floatArrayOf(v * PlaneHalf, u * PlaneHalf, 0f)
-    }
-    val angle = u * bend * 0.5f
-    val radius = ShellRadiusAe * 0.92f
-    val alongY = sin(angle) * radius
-    val alongZ = cos(angle) * radius
-    val twist = u * twistDeg * 0.5f * DegreesToRadians
-    val across = v * PlaneHalf
-    val twistCos = cos(twist)
-    val twistSin = sin(twist)
-    val x = across * twistCos
-    val y = alongY + across * twistSin * sin(angle)
-    val z = alongZ + across * twistSin * cos(angle)
-    return floatArrayOf(x, y, z)
+private fun DrawScope.projectRibbon(
+    s: Float,
+    t: Float,
+    spec: PetalSpec,
+    halfWidth: Float,
+    bendDeg: Float,
+    twistDeg: Float,
+    spread: Float,
+    push: Float,
+    driftX: Float,
+    driftY: Float,
+    rotXCos: Float,
+    rotXSin: Float,
+    rotYCos: Float,
+    rotYSin: Float,
+    rotZCos: Float,
+    rotZSin: Float,
+    focal: Float,
+    local: FloatArray,
+    out: FloatArray,
+) {
+    writeRibbonPoint(local, s, t, spec.halfLength, halfWidth, bendDeg, twistDeg, spec.bias, spec.curl)
+    val x0 = local[0] * spread + push + driftX
+    val y0 = local[1] * spread + driftY
+    val z0 = local[2] * spread
+    val y1 = y0 * rotXCos - z0 * rotXSin
+    val z1 = y0 * rotXSin + z0 * rotXCos
+    val x2 = x0 * rotYCos + z1 * rotYSin
+    val z2 = -x0 * rotYSin + z1 * rotYCos
+    val x3 = x2 * rotZCos - y1 * rotZSin
+    val y3 = x2 * rotZSin + y1 * rotZCos
+    // +z points at the camera. Depth increases away from it.
+    val depth = CameraDistance - z2
+    val projection = focal / depth.coerceAtLeast(420f)
+    out[0] = center.x + x3 * projection
+    out[1] = center.y - y3 * projection
+    out[2] = depth
 }
 
-private data class RingMask(val coverage: Float, val edge: Float)
+/**
+ * Blade through the origin. [s] runs tip to tip, [t] runs across the sheet.
+ * Bend curves the centerline in the sheet, so the tips stay out at the glass.
+ * Twist banks the cross-section; a bank of 90° is the edge-on hairline.
+ */
+private fun writeRibbonPoint(
+    out: FloatArray,
+    s: Float,
+    t: Float,
+    halfLength: Float,
+    halfWidth: Float,
+    bendDeg: Float,
+    twistDeg: Float,
+    bias: Float,
+    curl: Float,
+) {
+    val taper = taperOf(s, bias)
+    val across = t * halfWidth * taper
+    val halfAngle = bendDeg * DegreesToRadians * 0.5f
+    val xArc: Float
+    val yArc: Float
+    if (abs(halfAngle) < 0.02f) {
+        xArc = s * halfLength
+        yArc = 0f
+    } else {
+        val angle = s * halfAngle
+        xArc = sin(angle) / sin(halfAngle) * halfLength
+        val bowSign = if (bendDeg >= 0f) 1f else -1f
+        yArc = (1f - cos(angle)) * halfLength * 0.46f * bowSign
+    }
+    val twist = s * twistDeg * DegreesToRadians
+    out[0] = xArc
+    out[1] = yArc + across * cos(twist) + sin(s * Pi) * curl * halfLength
+    out[2] = across * sin(twist)
+}
 
 /**
- * Circle mask whose outer edge is sharp. Feather travels inward only.
- * [fill] shrinks the center hole until the petal reads solid (processing).
+ * Ribbon profile: nearly even width through the body, then a smooth needle.
+ * [bias] slides the wide point so one tip is longer than the other.
  */
-private fun ringMask(u: Float, v: Float, fill: Float): RingMask {
-    val radius = hypot(u, v)
-    val t = fill.coerceIn(0f, 1f)
-    val outer = 0.992f
-    val outside = 1f - smoothStep(((radius - outer) / 0.010f).coerceIn(0f, 1f))
-    val hole = 0.40f * (1f - t)
-    val featherWidth = (0.56f * (1f - t) + 0.04f * t).coerceAtLeast(0.035f)
-    val body = smoothStep(((radius - hole) / featherWidth).coerceIn(0f, 1f))
-    val coverage = outside * body
-    val lip = smoothStep(((radius - (outer - 0.08f)) / 0.08f).coerceIn(0f, 1f))
-    return RingMask(coverage = coverage, edge = outside * lip)
+private fun taperOf(s: Float, bias: Float): Float {
+    val pivot = bias.coerceIn(-0.45f, 0.45f)
+    val u = if (s >= pivot) {
+        (s - pivot) / (1f - pivot)
+    } else {
+        (pivot - s) / (pivot + 1f)
+    }
+    val c = abs(u).coerceIn(0f, 1f)
+    if (c >= 0.998f) return 0f
+    val needle = 1f - smoothStep(((c - 0.58f) / 0.42f).coerceIn(0f, 1f))
+    return needle * (0.90f + 0.10f * (1f - c * c))
 }
 
 /** Periodic stand-in for wiggle(0.2, amplitude). Value is about -1..1. */
@@ -604,13 +783,6 @@ private fun loopWiggle(phase: Float, seed: Float): Float {
     val b = 0.42f * sin(phase * (WiggleCycles + 2f) + seed * 1.7f)
     val c = 0.20f * sin(phase * (WiggleCycles + 5f) + seed * 2.4f)
     return ((a + b + c) / 1.62f).coerceIn(-1f, 1f)
-}
-
-private fun turbulence(angle: Float, evolution: Float): Float {
-    val n1 = sin(angle * TurbulenceFeatures + evolution)
-    val n2 = sin(angle * (TurbulenceFeatures * 0.55f) - evolution * 1.6f + 0.7f)
-    val n3 = sin(angle * 7f + evolution * 0.5f + 1.4f)
-    return n1 * 0.58f + n2 * 0.28f + n3 * 0.14f
 }
 
 /** Straight-alpha color with RGB scaled by [alpha] so screen vertices stay correct. */
