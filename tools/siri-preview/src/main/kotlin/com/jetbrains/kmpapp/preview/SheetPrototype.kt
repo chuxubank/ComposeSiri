@@ -78,7 +78,7 @@ half4 main(float2 fc){
     half3 acc = half3(0);
     float r = length(pS);
     float radial = 1.0 - smoothstep(0.80, 0.97, r);
-    float starBoost = 1.0 + 3.0 * exp(-(r/0.3)*(r/0.3));
+    float starBoost = 1.0 + 3.0 * uSideK * exp(-(r/0.2)*(r/0.2));
     float dA = -1.0; float dB = -1.0; float dC = -1.0;
     half4 cA = half4(0); half4 cB = half4(0); half4 cC = half4(0);
     for (int k = 0; k < 3; k++) {
@@ -130,7 +130,7 @@ half4 main(float2 fc){
             if (uPass < 0.5) {
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
-                float bri = mix(1.3, 0.35, v) * (1.0 + 0.8 * exp(-(r/0.18)*(r/0.18)) + 3.0 * uSideK * pow(1.0 - ndv, 2.0) * exp(-(r/0.28)*(r/0.28))) * (1.0 + 0.5 * fres);
+                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 3.0 * uSideK * uSideK * pow(1.0 - ndv, 2.0) * exp(-(r/0.20)*(r/0.20))) * (1.0 + 0.5 * fres);
                 float a = mix(0.95, 0.4, v) * (1.0 - smoothstep(0.85, 1.0, v)) * (0.6 + 0.4*centre) * fog;
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (k == 0) { dA = tt; cA = c4; } else if (k == 1) { dB = tt; cB = c4; } else { dC = tt; cC = c4; }
@@ -171,7 +171,7 @@ internal data class OrbParams(
 internal fun renderSheetStills(
     outDir: Path, count: Int, fps: Double, seconds: Double, size: Int = 870,
     prefix: String = "s",
-    paramsAt: (Int, Double) -> OrbParams = { _, t -> OrbParams(spinT = t.toFloat()) },
+    paramsAt: (Int, Double) -> OrbParams = { _, t -> OrbParams(spinT = t.toFloat(), sideK = (System.getenv("SIDEK") ?: "1").toFloat(), core = (System.getenv("CORE") ?: System.getenv("SIDEK") ?: "1").toFloat()) },
 ) {
     val effect = RuntimeEffect.makeForShader(SheetSksl)
     val threshold = RuntimeEffect.makeForShader("""
@@ -232,13 +232,13 @@ internal fun renderSheetStills(
         })
         c.drawImage(rimImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })
         // White spill along sheets near the centre (~30%).
-        c.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = 77 })
+        c.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (77 * prm.sideK * prm.sideK).toInt().coerceIn(0, 255) })
         c.drawImage(bodyImg, 0f, 0f, Paint().apply {
             colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
                 0.33f, 0.33f, 0.33f, 0f, 0f, 0.33f, 0.33f, 0.33f, 0f, 0f,
                 0.33f, 0.33f, 0.33f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
         })
-        c.drawCircle(cx, cx, radius * 0.28f, Paint().apply {
+        c.drawCircle(cx, cx, radius * 0.24f * prm.sideK, Paint().apply {
             blendMode = BlendMode.DST_IN
             maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.12f)
         })
@@ -352,7 +352,9 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0, perState: Double 
             "Processing" -> dCore = 0.2f * kotlin.math.sin(2.0 * Math.PI * 1.5 * tE).toFloat()   // 0.6..1.0
             "Result" -> {
                 dCore = 0.35f * (1f - smoothstepF(0f, 0.4f, tE))                                // flash 1.6 -> 1.25
-                dScale = -0.04f * kotlin.math.exp(-1.5f * tE) * kotlin.math.cos(10f * tE)        // spring 1.0 -> ~1.07 -> 1.04
+                // spring from the Processing scale (0.85): peak ~1.08 at ~0.37 s, settles to 1.04
+                val sp = 1.04f + kotlin.math.exp(-4f * tE) * (-0.19f * kotlin.math.cos(8f * tE) - 0.05f * kotlin.math.sin(8f * tE))
+                dScale = sp - scale
             }
             "Disappear" -> {
                 // shrink to centre, then ~0.15 s core flash, then off
