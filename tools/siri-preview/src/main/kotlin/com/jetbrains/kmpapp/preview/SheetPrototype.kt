@@ -122,14 +122,17 @@ half4 main(float2 fc){
             float body = (0.18 + 0.82*centre) * (1.0 - fres) * (0.5 + 0.5*ring);
             float thinRim = pow(1.0 - ndv, 9.0);
             if (uPass < 0.5) {
-                float a = clamp(body * 3.2, 0.0, 1.0) * 0.7 * fog;
-                half4 c4 = half4(col.rgb * half(1.0), half(a));
+                // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
+                float v = 1.0 - side;
+                float bri = mix(1.3, 0.35, v);
+                float a = mix(0.9, 0.4, v) * (1.0 - smoothstep(0.85, 1.0, v)) * (0.6 + 0.4*centre) * fog;
+                half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (k == 0) { dA = tt; cA = c4; } else if (k == 1) { dB = tt; cB = c4; } else { dC = tt; cC = c4; }
             } else {
                 // first hit only; far side attenuated by fog^2; tips fade radially
                 float rimK = thinRim * pow(1.0 - ndv, 4.0) * starBoost;
                 half3 bright = mix(min(col.rgb * 1.35 + half3(0.12), half3(1.0)), half3(1.0), half(clamp((starBoost - 1.0) / 3.0, 0.0, 1.0)));
-                acc += bright * half(clamp(rimK * 2.2, 0.0, 3.0) * fog * fog);
+                acc += bright * half(clamp(rimK * 2.2, 0.0, 5.0) * fog * fog * (1.0 + 0.3 * (starBoost - 1.0)));
             }
         } else if (minD < 0.012) {
             // edge-on: sheet thinner than a pixel -> bright needle line
@@ -154,6 +157,14 @@ half4 main(float2 fc){
 
 internal fun renderSheetStills(outDir: Path, count: Int, fps: Double, seconds: Double, size: Int = 870) {
     val effect = RuntimeEffect.makeForShader(SheetSksl)
+    val threshold = RuntimeEffect.makeForShader("""
+        uniform shader img;
+        half4 main(float2 c) {
+            half3 x = max(img.eval(c).rgb, half3(0));
+            half l = dot(x, half3(0.2126, 0.7152, 0.0722));
+            return half4(x * (max(l - 1.0, 0.0) / max(l, 1e-4)), 1);
+        }
+    """)
     val tonemap = RuntimeEffect.makeForShader("""
         uniform shader img;
         uniform float2 uSize;
@@ -186,95 +197,82 @@ internal fun renderSheetStills(outDir: Path, count: Int, fps: Double, seconds: D
         val rimImg = pass(1f)
         val radius = size * 0.45f
         val cx = size / 2f
-        val out = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
-        val c = out.canvas
-        c.clear(Color.BLACK)
-        // Shell base: very dark #2D2C32, heavily feathered.
-        c.drawCircle(cx, cx, radius * 0.9f, Paint().apply {
-            color = 0x222D2C32
-            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.12f)
-        })
+        fun f16() = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
         val k = size / 1740f
-        // Inner shell glow: body blurred ~30% radius, ring mask 0.8..1.0, 30% strength.
-        c.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = 40 })
-        c.drawImage(bodyImg, 0f, 0f, Paint().apply {
-            imageFilter = ImageFilter.makeBlur(radius * 0.3f, radius * 0.3f, FilterTileMode.DECAL)
-        })
-        c.drawCircle(cx, cx, radius * 0.9f, Paint().apply {
-            blendMode = BlendMode.DST_IN
-            mode = org.jetbrains.skia.PaintMode.STROKE
-            strokeWidth = radius * 0.2f
-            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.04f)
-        })
-        c.restore()
-        // Body: big soft colour fields (blur ~8% radius) plus faint wide glows.
-        // Body base: OVER-composited sheets (in shader), softened 12% radius; then additive wide glows.
+        // 1) HDR scene: body (OVER in shader, slight soften) + sharp rim + HDR core.
+        val scene = f16()
+        val c = scene.canvas
+        c.clear(Color.BLACK)
         c.drawImage(bodyImg, 0f, 0f, Paint().apply {
             imageFilter = ImageFilter.makeBlur(radius * 0.06f, radius * 0.06f, FilterTileMode.DECAL)
-            blendMode = BlendMode.SCREEN
-        })
-        for ((sigma, alpha) in listOf(200f * k to 0.03f, 80f * k to 0.06f)) {
-            c.drawImage(bodyImg, 0f, 0f, Paint().apply {
-                imageFilter = ImageFilter.makeBlur(sigma, sigma, FilterTileMode.DECAL)
-                blendMode = BlendMode.PLUS
-                this.alpha = (alpha * 255).toInt()
-            })
-        }
-        // Rim: sharp layer plus tight glow.
-        c.drawImage(rimImg, 0f, 0f, Paint().apply {
-            imageFilter = ImageFilter.makeBlur(30f * k, 30f * k, FilterTileMode.DECAL)
             blendMode = BlendMode.PLUS
-            this.alpha = 60
         })
         c.drawImage(rimImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })
-        // White core scaled by how much sheet body overlaps the centre.
-        val px = org.jetbrains.skia.Bitmap().apply { allocN32Pixels(5, 5) }
-        bodyImg.readPixels(px, (cx - 2).toInt(), (cx - 2).toInt())
-        var lum = 0f
-        for (yy in 0 until 5) for (xx in 0 until 5) {
-            val v = px.getColor(xx, yy)
-            lum += (((v shr 16) and 255) + ((v shr 8) and 255) + (v and 255)) / 765f
-        }
-        val cover = (lum / 25f * 1.6f).coerceIn(0.35f, 1.3f)
-        // White spill along the sheets near the centre.
-        c.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (77 * cover).toInt().coerceAtMost(255) })
+        // White spill along sheets near the centre (~30%).
+        c.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = 77 })
         c.drawImage(bodyImg, 0f, 0f, Paint().apply {
             colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
-                0.33f, 0.33f, 0.33f, 0f, 0f,
-                0.33f, 0.33f, 0.33f, 0f, 0f,
-                0.33f, 0.33f, 0.33f, 0f, 0f,
-                0f, 0f, 0f, 1f, 0f))
+                0.33f, 0.33f, 0.33f, 0f, 0f, 0.33f, 0.33f, 0.33f, 0f, 0f,
+                0.33f, 0.33f, 0.33f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
         })
         c.drawCircle(cx, cx, radius * 0.28f, Paint().apply {
             blendMode = BlendMode.DST_IN
             maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.12f)
         })
         c.restore()
-        for ((r, sig, a0) in listOf(
-            Triple(radius * 0.11f, radius * 0.08f, 0.30f),   // outer, slow falloff
-            Triple(radius * 0.06f, radius * 0.035f, 0.55f),   // halo (~30% radius overall)
-            Triple(radius * 0.025f, radius * 0.01f, 1.0f),  // bright dot
-        )) {
-            val alpha = (a0 * (if (a0 < 1f) cover else 1f)).coerceIn(0f, 1f)
+        // HDR core (peak ~4): additive passes, halo ~15% radius.
+        for ((r, sig, reps) in listOf(
+            Triple(radius * 0.11f, radius * 0.08f, 1),
+            Triple(radius * 0.06f, radius * 0.035f, 2),
+            Triple(radius * 0.025f, radius * 0.01f, 4),
+        )) repeat(reps) {
             c.drawCircle(cx, cx, r, Paint().apply {
-                color = ((alpha * 255).toInt() shl 24) or 0xFFFFFF
+                color = 0xFFFFFFFF.toInt()
                 blendMode = BlendMode.PLUS
                 maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, sig)
             })
         }
-        // 1px magenta outer ring #4D2D44.
-        c.drawCircle(cx, cx, radius, Paint().apply {
-            mode = org.jetbrains.skia.PaintMode.STROKE
-            strokeWidth = 1.2f
-            color = 0x594D2D44
-            isAntiAlias = true
-        })
+        val sceneImg = scene.makeImageSnapshot()
+        // 2) Threshold: keep HDR luminance above 1.0, then wide glows 0.15 / 0.3.
+        val thb = RuntimeShaderBuilder(threshold)
+        thb.child("img", sceneImg.makeShader())
+        val hot = f16()
+        hot.canvas.drawPaint(Paint().apply { shader = thb.makeShader() })
+        val hotImg = hot.makeImageSnapshot()
+        val out = f16()
+        out.canvas.drawImage(sceneImg, 0f, 0f)
+        for ((sigma, alpha) in listOf(200f * k to 0.15f, 80f * k to 0.3f, 30f * k to 0.5f)) {
+            out.canvas.drawImage(hotImg, 0f, 0f, Paint().apply {
+                imageFilter = ImageFilter.makeBlur(sigma, sigma, FilterTileMode.DECAL)
+                blendMode = BlendMode.PLUS
+                this.alpha = (alpha * 255).toInt()
+            })
+        }
         // Tonemap: ACES approx in linear, saturation x1.3, then sRGB encode.
         val tb = RuntimeShaderBuilder(tonemap)
         tb.child("img", out.makeImageSnapshot().makeShader())
         tb.uniform("uSize", size.toFloat(), size.toFloat())
         val fin = Surface.makeRasterN32Premul(size, size)
         fin.canvas.drawPaint(Paint().apply { shader = tb.makeShader() })
+        val fc = fin.canvas
+        // Shell glow after tonemap: 30%, ring 0.85..1.0 only.
+        fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = 77 })
+        fc.drawImage(bodyImg, 0f, 0f, Paint().apply {
+            imageFilter = ImageFilter.makeBlur(radius * 0.3f, radius * 0.3f, FilterTileMode.DECAL)
+        })
+        fc.drawCircle(cx, cx, radius * 0.925f, Paint().apply {
+            blendMode = BlendMode.DST_IN
+            mode = org.jetbrains.skia.PaintMode.STROKE
+            strokeWidth = radius * 0.15f
+            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.025f)
+        })
+        fc.restore()
+        fc.drawCircle(cx, cx, radius, Paint().apply {
+            mode = org.jetbrains.skia.PaintMode.STROKE
+            strokeWidth = 1.2f
+            color = 0x594D2D44
+            isAntiAlias = true
+        })
         val data = fin.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG)!!
         Files.write(outDir.resolve("s%02d.png".format(i)), data.bytes)
     }
