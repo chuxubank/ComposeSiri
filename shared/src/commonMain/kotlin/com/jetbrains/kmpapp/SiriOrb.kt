@@ -1,7 +1,8 @@
 package com.jetbrains.kmpapp
 
-import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,17 +26,29 @@ import androidx.compose.ui.unit.dp
 
 private const val TwoPi = 6.2831855f
 private const val ReferenceLoopMillis = 17_117
+private const val StateTransitionMillis = 900
 
-// AE Easy Ease is a slow-in / slow-out curve (about 33% influence).
-private val EasyEase = CubicBezierEasing(0.33f, 0f, 0.67f, 1f)
-
-/** The visual phases exposed by [SiriOrb]. */
+/**
+ * The visual phases exposed by [SiriOrb].
+ *
+ * Names already in the API stay. The six presentation states map as:
+ * [Appear] scales and fades in from 0;
+ * [Idle] is the standard loop;
+ * [Listening] and [Speaking] are voice interaction (world scale pulses with audio);
+ * [Thinking] is processing (petals separate, inner hole closes);
+ * [ShowingResult] is calm, slightly brighter, and slower;
+ * [Disappear] scales and fades out.
+ * [Error] stays a red alert state.
+ */
 enum class SiriOrbState {
     Idle,
     Listening,
     Thinking,
     Speaking,
     Error,
+    Appear,
+    ShowingResult,
+    Disappear,
 }
 
 internal data class SiriOrbStyle(
@@ -50,6 +64,7 @@ internal data class SiriOrbStyle(
     val errorAmount: Float,
     val separation: Float,
     val fill: Float,
+    val rotationScale: Float,
 )
 
 internal val SiriBlue = Color(0xFF0030FF)
@@ -61,17 +76,23 @@ internal val SiriPurple = Color(0xFF7A2CFF)
 /**
  * A Siri-inspired animated orb. Ribbons are feathered rings on twisted, bent planes.
  *
- * [audioLevel] is sampled while [state] is [SiriOrbState.Speaking] or [SiriOrbState.Error] to
- * drive scale (amplitude / 40, with 40 as unity). The caller controls size through [modifier].
+ * [audioLevel] (0..1, mapped onto a Sound Keys amplitude of 0..100) drives a
+ * world-scale pulse of amplitude/40 while [state] is [SiriOrbState.Listening],
+ * [SiriOrbState.Speaking], or [SiriOrbState.Error]. The caller controls size
+ * through [modifier].
+ *
+ * State changes ease with [FastOutSlowInEasing]. [SiriOrbState.Appear] animates
+ * in from scale and opacity 0 the first time it is shown, and whenever the
+ * previous state was [SiriOrbState.Disappear].
  */
 @Composable
 fun SiriOrb(
     modifier: Modifier = Modifier,
-    state: SiriOrbState = SiriOrbState.Listening,
+    state: SiriOrbState = SiriOrbState.Idle,
     audioLevel: Float = 0.65f,
 ) {
-    val transition = rememberInfiniteTransition(label = "Siri orb")
-    val time = transition.animateFloat(
+    val clock = rememberInfiniteTransition(label = "Siri orb")
+    val time = clock.animateFloat(
         initialValue = 0f,
         targetValue = ReferenceLoopMillis.toFloat(),
         animationSpec = infiniteRepeatable(
@@ -79,11 +100,17 @@ fun SiriOrb(
         ),
         label = "Siri orb time",
     )
+    val transitionState = remember {
+        MutableTransitionState(
+            if (state == SiriOrbState.Appear) SiriOrbState.Disappear else state,
+        )
+    }
+    transitionState.targetState = state
     SiriOrbFrame(
         modifier = modifier,
         timeMillis = time.value.toLong(),
         audioLevel = audioLevel,
-        style = animatedStyle(state),
+        style = animatedStyle(transitionState),
     )
 }
 
@@ -91,12 +118,14 @@ fun SiriOrb(
  * One still frame of [SiriOrb] at an explicit [timeMillis] in the reference loop.
  *
  * [timeMillis] is taken modulo the loop period so values beyond one cycle wrap.
- * Style is the target look for [state], with no state-to-state animation.
+ * Style is the resting look for [state], with no state-to-state animation.
+ * [SiriOrbState.Appear] therefore shows the fully appeared standard loop, and
+ * [SiriOrbState.Disappear] shows the collapsed pose.
  */
 @Composable
 fun SiriOrbFrame(
     modifier: Modifier = Modifier,
-    state: SiriOrbState = SiriOrbState.Listening,
+    state: SiriOrbState = SiriOrbState.Idle,
     timeMillis: Long,
     audioLevel: Float = 0.65f,
 ) {
@@ -138,7 +167,7 @@ private fun siriOrbPhase(timeMillis: Long): Float {
 @Composable
 fun SiriOrbScreen(
     modifier: Modifier = Modifier,
-    state: SiriOrbState = SiriOrbState.Listening,
+    state: SiriOrbState = SiriOrbState.Idle,
     audioLevel: Float = 0.65f,
 ) {
     Box(
@@ -160,9 +189,9 @@ fun SiriOrbScreen(
 }
 
 @Composable
-private fun animatedStyle(state: SiriOrbState): SiriOrbStyle {
-    val transition = updateTransition(targetState = state, label = "Siri state")
-    val animationSpec = tween<Float>(durationMillis = 850, easing = EasyEase)
+private fun animatedStyle(transitionState: MutableTransitionState<SiriOrbState>): SiriOrbStyle {
+    val transition = updateTransition(transitionState, label = "Siri state")
+    val animationSpec = tween<Float>(durationMillis = StateTransitionMillis, easing = FastOutSlowInEasing)
     fun target(value: SiriOrbState): SiriOrbStyle = value.targetStyle()
     return SiriOrbStyle(
         sizeScale = transition.animateFloat({ animationSpec }, label = "Siri size") {
@@ -201,68 +230,65 @@ private fun animatedStyle(state: SiriOrbState): SiriOrbStyle {
         fill = transition.animateFloat({ animationSpec }, label = "Siri fill") {
             target(it).fill
         }.value,
+        rotationScale = transition.animateFloat({ animationSpec }, label = "Siri rotation") {
+            target(it).rotationScale
+        }.value,
     )
 }
 
+private val StandardLoopStyle = SiriOrbStyle(
+    sizeScale = 1f,
+    motionScale = 1f,
+    opacityScale = 1f,
+    bloomScale = 1f,
+    bloomAlpha = 1f,
+    redWeight = 1f,
+    blueWeight = 1f,
+    tealWeight = 1f,
+    pulseAmount = 0f,
+    errorAmount = 0f,
+    separation = 0f,
+    fill = 0f,
+    rotationScale = 1f,
+)
+
 private fun SiriOrbState.targetStyle(): SiriOrbStyle = when (this) {
-    SiriOrbState.Idle -> SiriOrbStyle(
-        sizeScale = 0.72f,
-        motionScale = 0.25f,
-        opacityScale = 0.28f,
-        bloomScale = 0.55f,
-        bloomAlpha = 0.35f,
-        redWeight = 0.55f,
-        blueWeight = 0.60f,
-        tealWeight = 0.55f,
-        pulseAmount = 0.02f,
-        errorAmount = 0f,
-        separation = 0.08f,
-        fill = 0.15f,
-    )
+    // Standard loop. Appear rests on the same look; the entrance is the transition.
+    SiriOrbState.Idle,
+    SiriOrbState.Appear,
+    -> StandardLoopStyle
 
-    SiriOrbState.Listening -> SiriOrbStyle(
-        sizeScale = 1f,
-        motionScale = 1f,
-        opacityScale = 1f,
-        bloomScale = 1f,
-        bloomAlpha = 1f,
-        redWeight = 1f,
-        blueWeight = 1f,
-        tealWeight = 1f,
-        pulseAmount = 0f,
-        errorAmount = 0f,
-        separation = 0f,
-        fill = 0f,
-    )
+    // Voice interaction. World scale pulses with audioLevel / 40.
+    SiriOrbState.Listening,
+    SiriOrbState.Speaking,
+    -> StandardLoopStyle.copy(pulseAmount = 1f)
 
-    SiriOrbState.Thinking -> SiriOrbStyle(
-        sizeScale = 0.94f,
-        motionScale = 1.25f,
-        opacityScale = 0.95f,
-        bloomScale = 0.72f,
-        bloomAlpha = 0.70f,
-        redWeight = 0.16f,
-        blueWeight = 1.05f,
-        tealWeight = 1.08f,
-        pulseAmount = 0.02f,
-        errorAmount = 0f,
+    // Processing: petals move apart and the inner alpha hole closes.
+    SiriOrbState.Thinking -> StandardLoopStyle.copy(
+        sizeScale = 0.98f,
+        motionScale = 1.12f,
         separation = 1f,
         fill = 1f,
+        rotationScale = 1.08f,
     )
 
-    SiriOrbState.Speaking -> SiriOrbStyle(
-        sizeScale = 1f,
-        motionScale = 0.80f,
-        opacityScale = 1f,
-        bloomScale = 1.05f,
-        bloomAlpha = 1f,
-        redWeight = 1f,
-        blueWeight = 1f,
-        tealWeight = 1f,
-        pulseAmount = 1f,
-        errorAmount = 0f,
-        separation = 0f,
-        fill = 0f,
+    // Calm, slightly brighter, slower spin.
+    SiriOrbState.ShowingResult -> StandardLoopStyle.copy(
+        sizeScale = 1.02f,
+        motionScale = 0.28f,
+        opacityScale = 1.16f,
+        bloomScale = 1.06f,
+        bloomAlpha = 1.05f,
+        fill = 0.06f,
+        rotationScale = 0.40f,
+    )
+
+    SiriOrbState.Disappear -> StandardLoopStyle.copy(
+        sizeScale = 0f,
+        opacityScale = 0f,
+        bloomScale = 0.2f,
+        bloomAlpha = 0f,
+        rotationScale = 1f,
     )
 
     SiriOrbState.Error -> SiriOrbStyle(
@@ -278,5 +304,6 @@ private fun SiriOrbState.targetStyle(): SiriOrbStyle = when (this) {
         errorAmount = 1f,
         separation = 0.12f,
         fill = 0.20f,
+        rotationScale = 0.75f,
     )
 }

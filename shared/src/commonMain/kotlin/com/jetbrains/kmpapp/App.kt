@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.Color
 
 @Composable
 fun App() {
-    var state by remember { mutableStateOf(SiriOrbState.Listening) }
+    var state by remember { mutableStateOf(SiriOrbState.Idle) }
     MaterialTheme(
         colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black)
     ) {
@@ -30,9 +30,12 @@ fun App() {
 }
 
 private fun SiriOrbState.nextState(): SiriOrbState = when (this) {
+    SiriOrbState.Appear -> SiriOrbState.Idle
+    SiriOrbState.Idle -> SiriOrbState.Listening
     SiriOrbState.Listening -> SiriOrbState.Thinking
-    SiriOrbState.Thinking -> SiriOrbState.Speaking
-    SiriOrbState.Speaking -> SiriOrbState.Idle
-    SiriOrbState.Idle -> SiriOrbState.Error
-    SiriOrbState.Error -> SiriOrbState.Listening
+    SiriOrbState.Thinking -> SiriOrbState.ShowingResult
+    SiriOrbState.ShowingResult -> SiriOrbState.Speaking
+    SiriOrbState.Speaking -> SiriOrbState.Disappear
+    SiriOrbState.Disappear -> SiriOrbState.Error
+    SiriOrbState.Error -> SiriOrbState.Appear
 }
