@@ -53,10 +53,10 @@ private const val PitchFlipDeg = 34f
 private const val BloomRadiusFractionOfShell = 0.05f
 private const val LipPx = 1.7f
 // Blades reach ~90% of the glass radius.
-private const val LengthScale = 1.32f
+private const val LengthScale = 1.08f
 // Soft translucent body around each blade (AE feathered ring texture, clear centre).
 private const val BodyWidthScale = 4.2f
-private const val BodyAlpha = 0.5f
+private const val BodyAlpha = 0.06f
 private const val BodyBlurFractionOfShell = 0.07f
 private const val ModeSheet = 0
 private const val ModeEdge = 1
@@ -116,7 +116,7 @@ private val Petals = listOf(
         group = PetalColorGroup.Red,
         intensity = 1f,
         halfLength = 430f,
-        halfWidth = 46f,
+        halfWidth = 52f,
         bendDeg = 70f,
         twistDeg = 62f,
         bias = 0.18f,
@@ -135,7 +135,7 @@ private val Petals = listOf(
         group = PetalColorGroup.Blue,
         intensity = 1f,
         halfLength = 440f,
-        halfWidth = 42f,
+        halfWidth = 48f,
         bendDeg = 88f,
         twistDeg = -54f,
         bias = 0.08f,
@@ -154,7 +154,7 @@ private val Petals = listOf(
         group = PetalColorGroup.Blue,
         intensity = 0.92f,
         halfLength = 392f,
-        halfWidth = 26f,
+        halfWidth = 44f,
         bendDeg = -54f,
         twistDeg = 138f,
         bias = -0.16f,
@@ -173,7 +173,7 @@ private val Petals = listOf(
         group = PetalColorGroup.Teal,
         intensity = 0.80f,
         halfLength = 400f,
-        halfWidth = 20f,
+        halfWidth = 40f,
         bendDeg = -64f,
         twistDeg = -96f,
         bias = -0.12f,
@@ -374,20 +374,34 @@ private fun DrawScope.drawCore(shell: Float, phase: Float, style: SiriOrbStyle) 
     val breathe = 0.94f + 0.06f * sin(phase * 2f)
     val alpha = (style.bloomAlpha * style.opacityScale * overlap * breathe).coerceIn(0f, 1.15f)
     if (alpha <= 0.001f) return
-    val featherRadius = shell * 0.30f * style.bloomScale.coerceIn(0.25f, 1.4f)
+    val glowRadius = shell * 0.20f
     drawCircle(
         brush = Brush.radialGradient(
             colorStops = arrayOf(
-                0.00f to coreColor.copy(alpha = 0.82f * alpha),
-                0.22f to coreColor.copy(alpha = 0.46f * alpha),
-                0.48f to coreColor.copy(alpha = 0.14f * alpha),
-                0.74f to coreColor.copy(alpha = 0.03f * alpha),
+                0.00f to coreColor.copy(alpha = 0.55f * alpha.coerceAtMost(1f)),
+                0.25f to coreColor.copy(alpha = 0.18f * alpha.coerceAtMost(1f)),
+                0.60f to coreColor.copy(alpha = 0.04f * alpha.coerceAtMost(1f)),
                 1.00f to Color.Transparent,
             ),
             center = center,
-            radius = featherRadius,
+            radius = glowRadius,
         ),
-        radius = featherRadius,
+        radius = glowRadius,
+        center = center,
+        blendMode = BlendMode.Screen,
+    )
+    val dot = shell * 0.07f
+    drawCircle(
+        brush = Brush.radialGradient(
+            colorStops = arrayOf(
+                0.00f to coreColor.copy(alpha = alpha.coerceAtMost(1f)),
+                0.55f to coreColor.copy(alpha = 0.85f * alpha.coerceAtMost(1f)),
+                1.00f to Color.Transparent,
+            ),
+            center = center,
+            radius = dot,
+        ),
+        radius = dot,
         center = center,
         blendMode = BlendMode.Screen,
     )
@@ -409,7 +423,7 @@ private fun DrawScope.drawStarRays(
     )
     for (index in angles.indices) {
         val flick = 0.78f + 0.22f * sin(phase * 4f + index * 1.7f + Petals[index].seed)
-        val length = shell * 0.60f * (0.90f + 0.10f * flick)
+        val length = shell * 0.50f * (0.90f + 0.10f * flick)
         val rayAlpha = (0.75f * flick * cover).coerceIn(0f, 0.9f)
         if (rayAlpha <= 0.01f) continue
         val angle = angles[index]
@@ -581,7 +595,7 @@ private fun DrawScope.fillPetal(
 
     for (i in 0 until LengthVerts) {
         val s = -1f + 2f * i / LengthSegments
-        val taper = taperOf(s, spec.bias)
+        val taper = bladeWidth((s + 1f) * 0.5f)
         projectRibbon(s, -1f, spec, halfWidth, bendDeg, twistDeg, spread, push, driftX, driftY, rotXCos, rotXSin, rotYCos, rotYSin, rotZCos, rotZSin, focal, local, edgeNeg)
         projectRibbon(s, 1f, spec, halfWidth, bendDeg, twistDeg, spread, push, driftX, driftY, rotXCos, rotXSin, rotYCos, rotYSin, rotZCos, rotZSin, focal, local, edgePos)
         projectRibbon(s, 0f, spec, halfWidth, bendDeg, twistDeg, spread, push, driftX, driftY, rotXCos, rotXSin, rotYCos, rotYSin, rotZCos, rotZSin, focal, local, midPoint)
@@ -632,7 +646,7 @@ private fun DrawScope.fillPetal(
                 else -> insetRequest.coerceAtMost(halfWidthPx * 0.97f)
             }
             val t = when {
-                mode == ModeBody -> (j - MidRow).toFloat() / MidRow
+                mode != -1 -> (j - MidRow).toFloat() / MidRow
                 side == 0f -> 0f
                 halfWidthPx < 0.6f -> side
                 else -> side * (1f - insetPx / halfWidthPx)
@@ -672,8 +686,8 @@ private fun DrawScope.fillPetal(
                 colors[vertex] = src.withAlpha(alpha)
             } else if (mode == ModeEdge) {
                 // Colored halo on the bright lip. Kept tinted so it does not draw a white stroke.
-                val band = if (halfWidthPx < 2.6f) 1f else (1f - insetPx / BloomBandPx).coerceIn(0f, 1f)
-                val alpha = (band * energy * fog * shellFade * style.bloomAlpha * 0.72f).coerceIn(0f, 1f)
+                val band = if (j >= WidthSegments - 1) 1f else 0f
+                val alpha = (band * energy * fog * shellFade * style.bloomAlpha.coerceAtMost(1f) * 0.45f).coerceIn(0f, 1f)
                 val glow = 0f
                 colors[vertex] = Color(
                     red = src.red + (1f - src.red) * glow,
@@ -683,6 +697,18 @@ private fun DrawScope.fillPetal(
             } else {
                 // Saturated sheet. The hot streak is only the spine, stronger where
                 // the blade crosses the orb. The lip is the 1–2px hard edge.
+                val bright = ((t + 1f) * 0.5f).pow(1.6f)
+                val edgeLip = if (j == WidthSegments) 1f else 0f
+                val shade = (0.18f + 0.82f * bright).coerceIn(0f, 1f)
+                val a0 = (energy.coerceAtMost(1f) * fog * shellFade).coerceIn(0f, 1f)
+                colors[vertex] = Color(
+                    red = (src.red * shade + edgeLip * 0.15f).coerceAtMost(1f),
+                    green = (src.green * shade + edgeLip * 0.15f).coerceAtMost(1f),
+                    blue = (src.blue * shade + edgeLip * 0.15f).coerceAtMost(1f),
+                ).withAlpha(a0 * (0.55f + 0.45f * bright))
+                depthSum += depth
+                continue
+                @Suppress("UNREACHABLE_CODE")
                 val spine = centerline.pow(1.35f)
                 val streak = spine * (0.15f + 0.85f * heat)
                 // One solid colour per blade; overlaps alone go white/pink.
@@ -761,24 +787,26 @@ private fun writeRibbonPoint(
     bias: Float,
     curl: Float,
 ) {
-    val taper = taperOf(s, bias)
-    val across = t * halfWidth * taper
-    val halfAngle = bendDeg * DegreesToRadians * 0.5f
-    val xArc: Float
-    val yArc: Float
-    if (abs(halfAngle) < 0.02f) {
-        xArc = s * halfLength
-        yArc = 0f
-    } else {
-        val angle = s * halfAngle
-        xArc = sin(angle) / sin(halfAngle) * halfLength
-        val bowSign = if (bendDeg >= 0f) 1f else -1f
-        yArc = (1f - cos(angle)) * halfLength * 0.46f * bowSign
-    }
-    val twist = s * twistDeg * DegreesToRadians
-    out[0] = xArc
-    out[1] = yArc + across * cos(twist) + sin(s * Pi) * curl * halfLength
+    // Propeller blade: rounded root just past the centre, needle at ONE tip.
+    val u = (s + 1f) * 0.5f
+    val length = halfLength * 1.02f
+    val width = bladeWidth(u)
+    val across = t * halfWidth * width
+    // Curved centreline (both edges follow it) plus an asymmetric belly.
+    val curve = bendDeg / 180f
+    val xc = length * (-0.10f + 1.0f * u)
+    val yc = length * curve * u * u * 0.55f + halfWidth * (0.35f + bias) * width
+    val twist = (u - 0.25f) * twistDeg * DegreesToRadians
+    out[0] = xc
+    out[1] = yc + across * cos(twist) + sin(u * Pi) * curl * length
     out[2] = across * sin(twist)
+}
+
+/** Blade half-width profile along u (0 root .. 1 tip): round root, widest ~30%, needle tip. */
+private fun bladeWidth(u: Float): Float {
+    val rise = sin((u / 0.30f).coerceIn(0f, 1f) * Pi * 0.5f)
+    val fall = 1f - smoothStep(((u - 0.30f) / 0.70f).coerceIn(0f, 1f))
+    return (rise * fall.pow(0.85f)).coerceIn(0f, 1f)
 }
 
 /**
@@ -837,7 +865,7 @@ private fun DrawScope.drawBodyLobes(
         val fogT = ((depth[index] - FogStart) / FogRange).coerceIn(0f, 1f)
         val near = 1f - 0.7f * smoothStep(fogT)
         val w = loopWiggle(phase, spec.seed + 9.3f)
-        val alpha = (0.75f * (0.7f + 0.3f * w) * near * weight * spec.intensity * style.opacityScale *
+        val alpha = (0.16f * (0.7f + 0.3f * w) * near * weight * spec.intensity * style.opacityScale *
             (1f + style.fill * 0.5f)).coerceIn(0f, 0.8f)
         if (alpha <= 0.01f) return@forEachIndexed
         val sideSign = if (index % 2 == 0) 1f else -1f

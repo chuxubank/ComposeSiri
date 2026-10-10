@@ -265,23 +265,14 @@ private fun SiriOrbState.targetStyle(): SiriOrbStyle = when (this) {
 
     // Processing: petals move apart and the inner alpha hole closes.
     SiriOrbState.Thinking -> StandardLoopStyle.copy(
-        sizeScale = 0.96f,
-        motionScale = 1.25f,
-        opacityScale = 1.1f,
-        separation = 1f,
-        fill = 1f,
+        motionScale = 1.6f,
         rotationScale = 1.7f,
     )
 
     // Calm, slightly brighter, slower spin.
     SiriOrbState.ShowingResult -> StandardLoopStyle.copy(
-        sizeScale = 1.02f,
-        motionScale = 0.28f,
-        opacityScale = 1.25f,
-        bloomScale = 1.06f,
-        bloomAlpha = 1.05f,
-        fill = 0.06f,
-        rotationScale = 0.40f,
+        motionScale = 0.45f,
+        rotationScale = 0.45f,
     )
 
     SiriOrbState.Disappear -> StandardLoopStyle.copy(
