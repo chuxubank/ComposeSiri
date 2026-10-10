@@ -30,41 +30,40 @@ float3x3 rotY(float a){ float c=cos(a), s=sin(a); return float3x3(c,0,s, 0,1,0, 
 float3x3 rotZ(float a){ float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0, 0,0,1); }
 
 // width profile along u in [0,1]: rounded root, widest ~0.35, needle tip
+// centred sheet: widest at the middle, needles at both ends, slightly asymmetric
 float profile(float u){
-    if (u < 0.0 || u > 1.0) return -1.0;
-    float rise = sin(clamp(u/0.35,0.0,1.0)*PI*0.5);
-    float fall = 1.0 - smoothstep(0.35, 1.0, u);
-    return rise * pow(fall, 0.9);
+    float m = sin(clamp(u,0.0,1.0)*PI);
+    return pow(m, 0.75) * (0.85 + 0.15*u);
 }
 
 // signed-ish distance to sheet k in its local frame; also returns (u, v) in uv
 float sheetSdf(float3 p, float twist, float bend, out float2 uv){
-    float L = 1.05;              // length in shell radii
-    float u = (p.x + 0.12) / L;  // root slightly behind centre
-    // bend: centreline curves in y
-    float yc = bend * u * u;
+    float L = 1.27;              // half length (shell radii): 85% of diameter x1.5
+    float u = (p.x + L) / (2.0*L);
+    // bend: centreline arcs in y, centred
+    float xs = p.x / L;
+    float yc = bend * (xs*xs - 0.33);
     float3 q = float3(p.x, p.y - yc, p.z);
     // twist around the long axis
-    float a = twist * (u - 0.3);
+    float a = twist * (u - 0.5);
     float c = cos(a), s = sin(a);
     float2 yz = float2(c*q.y + s*q.z, -s*q.y + c*q.z);
-    float w = profile(clamp(u,0.0,1.0)) * 0.24;   // half width (shell radii)
+    float w = profile(clamp(u,0.0,1.0)) * 0.36;   // half width (shell radii)
     uv = float2(u, yz.x / max(w, 1e-4));
     float dz = abs(yz.y) - 0.004;
     float dy = abs(yz.x) - w;
-    float dx = max(-u, u - 1.0) * L;
+    float dx = max(-u, u - 1.0) * 2.0 * L;
     return max(max(dz, dy), dx);
 }
 
 half4 sheetColor(int k){
     if (k == 0) return half4(1.0, 0.176, 0.333, 1);   // #FF2D55
     if (k == 1) return half4(0.039, 0.518, 1.0, 1);   // #0A84FF
-    if (k == 2) return half4(0.0, 1.0, 0.8, 1);       // #00FFCC
-    return half4(0.0, 0.19, 1.0, 1);                  // #0030FF
+    return half4(0.0, 1.0, 0.8, 1);                   // #00FFCC
 }
 
 half4 main(float2 fc){
-    float2 p = (fc - 0.5*uSize) / (0.66*uSize.x);   // ribbons fill the glass
+    float2 p = (fc - 0.5*uSize) / (0.45*uSize.x);   // ribbons fill the glass
     p.y = -p.y;
     float3 ro = float3(0, 0, 5.85);                  // camera 2700/461
     float3 rd = normalize(float3(p * (1.0/5.85) * 5.85 / 5.85, -1.0));
@@ -77,19 +76,23 @@ half4 main(float2 fc){
         // AE: time*45+value / -time*30+value deg/s, counter-rotating groups; wiggle(0.2,10/15)
         float spin = (mod(fk,2.0) < 0.5 ? 45.0 : -30.0) * PI/180.0;
         float wig = sin(t*1.257 + fk*1.9) * 0.6 + sin(t*0.71 + fk*3.1) * 0.4;
-        float3x3 R = rotZ(fk*1.7 + t*spin) * rotX(0.9 + fk*1.3 + t*spin*0.7 + wig*0.5) * rotY(0.3*fk + wig*0.25);
+        // per-sheet X/Y/Z rates (deg/s), AE: time*30 / time*45 / -time*30 / -time*45
+        float3 rate = k == 0 ? float3(30.0, -45.0, 30.0) : (k == 1 ? float3(-45.0, 30.0, -30.0) : float3(45.0, 30.0, -45.0));
+        float3 off = k == 0 ? float3(0.3, 0.2, 0.0) : (k == 1 ? float3(1.4, 2.1, 1.1) : float3(2.6, 0.9, 2.2));
+        float3 ang = off + rate * (PI/180.0) * t + float3(wig*0.35, wig*0.25, -wig*0.2);
+        float3x3 R = rotZ(ang.z) * rotY(ang.y) * rotX(ang.x);
         float3x3 Ri = float3x3(R[0][0],R[1][0],R[2][0], R[0][1],R[1][1],R[2][1], R[0][2],R[1][2],R[2][2]);
         float twist = 2.2 + wig * 0.6;
         float bend = 0.35 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.08;
         float3 o = Ri * ro; float3 d = Ri * rd;
-        float tt = 4.2; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0);
+        float tt = 4.3; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0);
         for (int i = 0; i < 72; i++) {
             float3 pos = o + d*tt;
             float dd = sheetSdf(pos, twist, bend, uv);
             if (dd < minD) { minD = dd; nearUv = uv; }
             if (dd < 0.0008) { hit = true; break; }
             tt += max(dd * 0.55, 0.002);
-            if (tt > 7.6) break;
+            if (tt > 7.5) break;
         }
         half4 col = sheetColor(k);
         if (hit) {
@@ -108,14 +111,19 @@ half4 main(float2 fc){
             // depth fog: far half fades to black (AE fog start 2700, range 1000)
             float z = (R * pos).z;
             float fog = clamp(0.55 + 0.45*z/0.9, 0.0, 1.0);
-            float a = clamp(ring*0.75 + rim*0.6 + fres*1.2, 0.0, 1.6) * fog;
-            acc += col.rgb * half(a) + half3(fres*0.35*fog + rim*0.12*fog);
+            float centre = 1.0 - smoothstep(0.15, 1.0, abs(2.0*uv.x - 1.0));
+            float body = (0.18 + 0.82*centre) * (1.0 - fres) * (0.5 + 0.5*ring);
+            float thinRim = pow(1.0 - ndv, 9.0);
+            float a = clamp(body*0.95 + thinRim*1.6, 0.0, 1.6) * fog;
+            acc += col.rgb * half(a) + half3(thinRim*0.45*fog);
         } else if (minD < 0.012) {
             // edge-on: sheet thinner than a pixel -> bright needle line
             float g = 1.0 - minD/0.012;
             acc += (col.rgb*0.9 + half3(0.25)) * half(g*g*0.8);
         }
     }
+    float r = length(p);
+    acc *= half(1.0 - smoothstep(0.985, 1.0, r));
     return half4(acc, 1);
 }
 """
@@ -139,7 +147,8 @@ internal fun renderSheetStills(outDir: Path, count: Int, fps: Double, seconds: D
         val c = out.canvas
         c.clear(Color.BLACK)
         // layered glow: wide + medium blur, then sharp sheet, all additive
-        for ((sigma, alpha) in listOf(size * 0.06f to 0.55f, size * 0.018f to 0.7f)) {
+        val k = size / 1740f
+        for ((sigma, alpha) in listOf(200f * k to 0.125f, 80f * k to 0.25f, 30f * k to 0.5f)) {
             c.drawImage(sheetImg, 0f, 0f, Paint().apply {
                 imageFilter = ImageFilter.makeBlur(sigma, sigma, FilterTileMode.DECAL)
                 blendMode = BlendMode.PLUS
