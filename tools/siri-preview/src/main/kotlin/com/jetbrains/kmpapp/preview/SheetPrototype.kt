@@ -124,15 +124,17 @@ half4 main(float2 fc){
             if (uPass < 0.5) {
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
-                float bri = mix(1.3, 0.35, v);
-                float a = mix(0.9, 0.4, v) * (1.0 - smoothstep(0.85, 1.0, v)) * (0.6 + 0.4*centre) * fog;
+                float bri = mix(1.3, 0.35, v) * (1.0 + 1.5 * exp(-(r/0.18)*(r/0.18))) * (1.0 + 0.5 * fres);
+                float a = mix(0.95, 0.4, v) * (1.0 - smoothstep(0.85, 1.0, v)) * (0.6 + 0.4*centre) * fog;
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (k == 0) { dA = tt; cA = c4; } else if (k == 1) { dB = tt; cB = c4; } else { dC = tt; cC = c4; }
             } else {
                 // first hit only; far side attenuated by fog^2; tips fade radially
-                float rimK = thinRim * pow(1.0 - ndv, 4.0) * starBoost;
+                float vE = 1.0 - side;
+                float edgeLine = 1.0 - smoothstep(0.0, 0.08, vE);
+                float rimK = edgeLine * (0.35 + 0.65 * pow(1.0 - ndv, 2.0)) * starBoost;
                 half3 bright = mix(min(col.rgb * 1.35 + half3(0.12), half3(1.0)), half3(1.0), half(clamp((starBoost - 1.0) / 3.0, 0.0, 1.0)));
-                acc += bright * half(clamp(rimK * 2.2, 0.0, 5.0) * fog * fog * (1.0 + 0.3 * (starBoost - 1.0)));
+                acc += bright * half(clamp(rimK * 2.2, 0.0, 5.0) * fog * fog);
             }
         } else if (minD < 0.012) {
             // edge-on: sheet thinner than a pixel -> bright needle line
@@ -256,14 +258,23 @@ internal fun renderSheetStills(outDir: Path, count: Int, fps: Double, seconds: D
         fin.canvas.drawPaint(Paint().apply { shader = tb.makeShader() })
         val fc = fin.canvas
         // Shell glow after tonemap: 30%, ring 0.85..1.0 only.
-        fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = 77 })
+        // Interior base #2D2C32, feathered edge; outside stays black.
+        fc.drawCircle(cx, cx, radius * 0.96f, Paint().apply {
+            color = 0x592D2C32
+            blendMode = BlendMode.PLUS
+            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.03f)
+        })
+        fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = 153 })
         fc.drawImage(bodyImg, 0f, 0f, Paint().apply {
             imageFilter = ImageFilter.makeBlur(radius * 0.3f, radius * 0.3f, FilterTileMode.DECAL)
+            // linear body is dark after a 30% blur: x3 gain, sRGB-ish lift
+            colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
+                3f, 0f, 0f, 0f, 0f, 0f, 3f, 0f, 0f, 0f, 0f, 0f, 3f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
         })
-        fc.drawCircle(cx, cx, radius * 0.925f, Paint().apply {
+        fc.drawCircle(cx, cx, radius * 0.875f, Paint().apply {
             blendMode = BlendMode.DST_IN
             mode = org.jetbrains.skia.PaintMode.STROKE
-            strokeWidth = radius * 0.15f
+            strokeWidth = radius * 0.25f
             maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.025f)
         })
         fc.restore()
