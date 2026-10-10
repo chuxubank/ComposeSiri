@@ -59,7 +59,7 @@ fun main(args: Array<String>) {
     System.setProperty("java.awt.headless", "true")
     if ("--sheet-demo" in args) {
         val outIdx = args.indexOf("--out")
-        renderSheetDemo(java.nio.file.Paths.get(if (outIdx >= 0) args[outIdx + 1] else "/tmp/sheetdemo"))
+        renderSheetDemo(java.nio.file.Paths.get(if (outIdx >= 0) args[outIdx + 1] else "/tmp/sheetdemo"), (System.getenv("FPS") ?: "10").toDouble())
         return
     }
     val sheetIdx = args.indexOf("--sheets")
