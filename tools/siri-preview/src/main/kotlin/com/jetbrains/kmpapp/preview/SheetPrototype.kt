@@ -140,7 +140,7 @@ half4 main(float2 fc){
                 float edgeLine = 1.0 - smoothstep(0.0, 0.08, vE);
                 float rimK = edgeLine * (0.35 + 0.65 * pow(1.0 - ndv, 2.0)) * starBoost;
                 half3 bright = mix(min(col.rgb * 1.35 + half3(0.12), half3(1.0)), half3(1.0), half(clamp((starBoost - 1.0) / 3.0, 0.0, 1.0)));
-                acc += bright * half(clamp(rimK * 2.2, 0.0, 5.0) * fog * fog * (1.0 - smoothstep(0.35, 0.75, r)));
+                acc += bright * half(0.7 * clamp(rimK * 2.2, 0.0, 5.0) * fog * fog * (1.0 - smoothstep(0.35, 0.75, r)));
             }
         } else if (minD < 0.012) {
             // edge-on: sheet thinner than a pixel -> bright needle line
@@ -171,7 +171,7 @@ internal data class OrbParams(
 internal fun renderSheetStills(
     outDir: Path, count: Int, fps: Double, seconds: Double, size: Int = 870,
     prefix: String = "s",
-    paramsAt: (Int, Double) -> OrbParams = { _, t -> OrbParams(spinT = t.toFloat(), sideK = (System.getenv("SIDEK") ?: "1").toFloat(), core = (System.getenv("CORE") ?: System.getenv("SIDEK") ?: "1").toFloat()) },
+    paramsAt: (Int, Double) -> OrbParams = { _, t -> OrbParams(spinT = t.toFloat(), sideK = (System.getenv("SIDEK") ?: "1.25").toFloat(), core = (System.getenv("CORE") ?: System.getenv("SIDEK") ?: "1.25").toFloat()) },
 ) {
     val effect = RuntimeEffect.makeForShader(SheetSksl)
     val threshold = RuntimeEffect.makeForShader("""
@@ -327,7 +327,7 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0, perState: Double 
         Target("Result", 0.6f, 0.6f, 1.04f, 1.25f, 1f),
         Target("Disappear", 1.0f, 1.0f, 0.0f, 0.0f, 1f),
     )
-    var sideK = 1f; var speed = 1f; var flip = 1f; var scale = 0.0f; var core = 0f; var fade = 0f; var spinT = 0f
+    var sideK = 1.25f; var speed = 1f; var flip = 1f; var scale = 0.0f; var core = 0f; var fade = 0f; var spinT = 0f
     val n = (states.size * perState * fps).toInt()
     val dt = (1.0 / fps).toFloat()
     val ease = 1f - kotlin.math.exp(-dt / 0.35f)   // ~0.35 s critically-damped-ish ease
@@ -338,7 +338,7 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0, perState: Double 
         val tE = (t - si * perState).toFloat()
         speed += (st.speed - speed) * ease; flip += (st.flip - flip) * ease
         scale += (st.scale - scale) * ease; core += (st.core - core) * ease; fade += (st.fade - fade) * ease
-        val sideT = when (st.name) { "Listening" -> 0.85f; "Processing" -> 0.75f; "Result" -> 1.1f; else -> 1f }
+        val sideT = when (st.name) { "Listening" -> 1.0625f; "Processing" -> 0.9375f; "Result" -> 1.375f; else -> 1.25f }
         sideK += (sideT - sideK) * ease
         spinT += speed * dt
         val voice = if (st.name == "Listening") {
