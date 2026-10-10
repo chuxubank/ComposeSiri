@@ -221,6 +221,7 @@ internal fun renderSheetStills(
     for (i in 0 until n) {
         val t = i / fps
         val prm = paramsAt(i, t)
+        if (i < (System.getenv("SKIP") ?: "0").toInt()) continue   // resume a partial render
         fun pass(id: Float): org.jetbrains.skia.Image {
             val b = RuntimeShaderBuilder(effect)
             b.uniform("uSize", size.toFloat(), size.toFloat())
