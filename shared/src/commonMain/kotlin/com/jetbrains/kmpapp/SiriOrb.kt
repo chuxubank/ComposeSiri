@@ -1,49 +1,32 @@
 package com.jetbrains.kmpapp
 
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
-import kotlin.math.cos
-import kotlin.math.sin
 
 private const val TwoPi = 6.2831855f
 private const val ReferenceLoopMillis = 17_117
 
-// Glass disc is 95% of the frame. The surface canvas is inset to that disc,
-// so mesh radii are fractions of the shell, not of the square frame.
-private const val ShellInsetFraction = 0.025f
+// AE Easy Ease is a slow-in / slow-out curve (about 33% influence).
+private val EasyEase = CubicBezierEasing(0.33f, 0f, 0.67f, 1f)
 
 /** The visual phases exposed by [SiriOrb]. */
 enum class SiriOrbState {
@@ -65,44 +48,21 @@ internal data class SiriOrbStyle(
     val tealWeight: Float,
     val pulseAmount: Float,
     val errorAmount: Float,
+    val separation: Float,
+    val fill: Float,
 )
 
-internal val SiriBlue = Color(0xFF0021FF)
-internal val SiriTeal = Color(0xFF23FFE6)
-internal val SiriGreen = Color(0xFF00F09A)
-internal val SiriRed = Color(0xFFFF1A22)
-private val VignetteBrush = Brush.radialGradient(
-    colorStops = arrayOf(
-        0f to Color.Transparent,
-        0.90f to Color.Transparent,
-        0.97f to Color.Black.copy(alpha = 0.10f),
-        1f to Color.Black.copy(alpha = 0.28f),
-    ),
-    center = Offset.Zero,
-    radius = 1f,
-)
-private val RimGlowBrush = Brush.radialGradient(
-    colorStops = arrayOf(
-        0.00f to Color.Transparent,
-        0.84f to Color.Transparent,
-        0.92f to Color(0xFF14686A).copy(alpha = 0.05f),
-        0.97f to Color(0xFF6A2430).copy(alpha = 0.07f),
-        1.00f to Color(0xFF10343C).copy(alpha = 0.09f),
-    ),
-    center = Offset.Zero,
-    radius = 1f,
-)
-private val ReflectionBrush = Brush.radialGradient(
-    colors = listOf(Color.White.copy(alpha = 0.035f), Color.Transparent),
-    center = Offset.Zero,
-    radius = 1f,
-)
+internal val SiriBlue = Color(0xFF0030FF)
+internal val SiriTeal = Color(0xFF00FFCC)
+internal val SiriRed = Color(0xFFFF1212)
+internal val SiriPink = Color(0xFFFF2A6D)
+internal val SiriPurple = Color(0xFF7A2CFF)
 
 /**
- * A Siri-inspired animated orb built from wide, curved translucent sheets.
+ * A Siri-inspired animated orb. Ribbons are feathered rings on twisted, bent planes.
  *
  * [audioLevel] is sampled while [state] is [SiriOrbState.Speaking] or [SiriOrbState.Error] to
- * drive the breathing response. The caller controls the component size through [modifier].
+ * drive scale (amplitude / 40, with 40 as unity). The caller controls size through [modifier].
  */
 @Composable
 fun SiriOrb(
@@ -156,66 +116,17 @@ private fun SiriOrbFrame(
     style: SiriOrbStyle,
 ) {
     val phaseState = rememberUpdatedState(siriOrbPhase(timeMillis))
-
-    BoxWithConstraints(modifier = modifier.aspectRatio(1f)) {
-        val shellInset = maxWidth * ShellInsetFraction
-        Box(Modifier.matchParentSize()) {
-            Box(
-                modifier = Modifier
-                    .padding(shellInset)
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        shape = CircleShape
-                        clip = true
-                        compositingStrategy = CompositingStrategy.Offscreen
-                    }
-                    .background(Color.Black),
-            ) {
-                // Broad fans, softened just enough that the interior reads as a
-                // gradient. A second pass keeps one flank and the needle tips.
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .blur(26.dp, BlurredEdgeTreatment.Unbounded),
-                ) {
-                    SiriSurfaceField(
-                        phaseState = phaseState,
-                        style = style,
-                        audioLevel = audioLevel.coerceIn(0f, 1f),
-                        widthScale = 1f,
-                        alphaScale = 0.9f,
-                        emphasizeEdge = false,
-                        modifier = Modifier.matchParentSize(),
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .blur(5.dp, BlurredEdgeTreatment.Unbounded),
-                ) {
-                    SiriSurfaceField(
-                        phaseState = phaseState,
-                        style = style,
-                        audioLevel = audioLevel.coerceIn(0f, 1f),
-                        widthScale = 1f,
-                        alphaScale = 1.15f,
-                        emphasizeEdge = true,
-                        modifier = Modifier.matchParentSize(),
-                    )
-                }
-                SiriCoreBloom(
-                    phaseState = phaseState,
-                    style = style,
-                    audioLevel = audioLevel.coerceIn(0f, 1f),
-                    modifier = Modifier.matchParentSize(),
-                )
-                OrbGlass(
-                    phaseState = phaseState,
-                    modifier = Modifier.matchParentSize(),
-                )
-            }
-            OrbShell(Modifier.matchParentSize())
-        }
+    Box(
+        modifier
+            .aspectRatio(1f)
+            .background(Color.Black),
+    ) {
+        SiriOrbVisual(
+            phaseState = phaseState,
+            style = style,
+            audioLevel = audioLevel.coerceIn(0f, 1f),
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 
@@ -251,7 +162,7 @@ fun SiriOrbScreen(
 @Composable
 private fun animatedStyle(state: SiriOrbState): SiriOrbStyle {
     val transition = updateTransition(targetState = state, label = "Siri state")
-    val animationSpec = tween<Float>(durationMillis = 850, easing = FastOutSlowInEasing)
+    val animationSpec = tween<Float>(durationMillis = 850, easing = EasyEase)
     fun target(value: SiriOrbState): SiriOrbStyle = value.targetStyle()
     return SiriOrbStyle(
         sizeScale = transition.animateFloat({ animationSpec }, label = "Siri size") {
@@ -284,21 +195,29 @@ private fun animatedStyle(state: SiriOrbState): SiriOrbStyle {
         errorAmount = transition.animateFloat({ animationSpec }, label = "Siri error") {
             target(it).errorAmount
         }.value,
+        separation = transition.animateFloat({ animationSpec }, label = "Siri separation") {
+            target(it).separation
+        }.value,
+        fill = transition.animateFloat({ animationSpec }, label = "Siri fill") {
+            target(it).fill
+        }.value,
     )
 }
 
 private fun SiriOrbState.targetStyle(): SiriOrbStyle = when (this) {
     SiriOrbState.Idle -> SiriOrbStyle(
-        sizeScale = 0.68f,
-        motionScale = 0.16f,
-        opacityScale = 0.22f,
-        bloomScale = 0.30f,
-        bloomAlpha = 0.12f,
-        redWeight = 0.50f,
-        blueWeight = 0.58f,
-        tealWeight = 0.54f,
+        sizeScale = 0.72f,
+        motionScale = 0.25f,
+        opacityScale = 0.28f,
+        bloomScale = 0.55f,
+        bloomAlpha = 0.35f,
+        redWeight = 0.55f,
+        blueWeight = 0.60f,
+        tealWeight = 0.55f,
         pulseAmount = 0.02f,
         errorAmount = 0f,
+        separation = 0.08f,
+        fill = 0.15f,
     )
 
     SiriOrbState.Listening -> SiriOrbStyle(
@@ -312,120 +231,52 @@ private fun SiriOrbState.targetStyle(): SiriOrbStyle = when (this) {
         tealWeight = 1f,
         pulseAmount = 0f,
         errorAmount = 0f,
+        separation = 0f,
+        fill = 0f,
     )
 
     SiriOrbState.Thinking -> SiriOrbStyle(
-        sizeScale = 0.92f,
-        motionScale = 1.34f,
-        opacityScale = 0.92f,
-        bloomScale = 0.78f,
-        bloomAlpha = 0.75f,
-        redWeight = 0.10f,
+        sizeScale = 0.94f,
+        motionScale = 1.25f,
+        opacityScale = 0.95f,
+        bloomScale = 0.72f,
+        bloomAlpha = 0.70f,
+        redWeight = 0.16f,
         blueWeight = 1.05f,
-        tealWeight = 1.10f,
+        tealWeight = 1.08f,
         pulseAmount = 0.02f,
         errorAmount = 0f,
+        separation = 1f,
+        fill = 1f,
     )
 
     SiriOrbState.Speaking -> SiriOrbStyle(
         sizeScale = 1f,
-        motionScale = 0.72f,
+        motionScale = 0.80f,
         opacityScale = 1f,
-        bloomScale = 1.12f,
+        bloomScale = 1.05f,
         bloomAlpha = 1f,
         redWeight = 1f,
         blueWeight = 1f,
         tealWeight = 1f,
         pulseAmount = 1f,
         errorAmount = 0f,
+        separation = 0f,
+        fill = 0f,
     )
 
     SiriOrbState.Error -> SiriOrbStyle(
-        sizeScale = 0.84f,
-        motionScale = 0.50f,
-        opacityScale = 0.90f,
-        bloomScale = 0.85f,
-        bloomAlpha = 0.85f,
-        redWeight = 1.20f,
-        blueWeight = 0.02f,
-        tealWeight = 0.02f,
-        pulseAmount = 0.45f,
+        sizeScale = 0.86f,
+        motionScale = 0.55f,
+        opacityScale = 0.92f,
+        bloomScale = 0.90f,
+        bloomAlpha = 0.88f,
+        redWeight = 1.15f,
+        blueWeight = 0.04f,
+        tealWeight = 0.04f,
+        pulseAmount = 0.55f,
         errorAmount = 1f,
+        separation = 0.12f,
+        fill = 0.20f,
     )
 }
-
-@Composable
-private fun OrbShell(modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val radius = size.minDimension * (0.5f - ShellInsetFraction)
-        val glowWidth = size.minDimension * 0.012f
-        val stroke = size.minDimension * 0.0026f
-        val sweep = Brush.sweepGradient(
-            colorStops = arrayOf(
-                0.00f to Color(0xFFFF5A62),
-                0.18f to Color(0xFF4A2428),
-                0.40f to Color(0xFF1CE6D4),
-                0.58f to Color(0xFF163034),
-                0.76f to Color(0xFFE23A48),
-                0.90f to Color(0xFF184448),
-                1.00f to Color(0xFFFF5A62),
-            ),
-            center = center,
-        )
-        drawCircle(
-            brush = sweep,
-            radius = radius * 0.978f,
-            style = Stroke(width = glowWidth),
-            alpha = 0.16f,
-            blendMode = BlendMode.Plus,
-        )
-        drawCircle(
-            brush = sweep,
-            radius = radius,
-            style = Stroke(width = stroke),
-            alpha = 0.38f,
-            blendMode = BlendMode.Plus,
-        )
-    }
-}
-
-@Composable
-private fun OrbGlass(
-    phaseState: State<Float>,
-    modifier: Modifier = Modifier,
-) {
-    Canvas(modifier) {
-        val phase = phaseState.value
-        val radius = size.minDimension / 2f
-        withTransform({
-            translate(center.x, center.y)
-            scale(radius, radius, pivot = Offset.Zero)
-        }) {
-            drawCircle(brush = VignetteBrush, center = Offset.Zero, radius = 1f)
-            drawCircle(
-                brush = RimGlowBrush,
-                center = Offset.Zero,
-                radius = 1f,
-                blendMode = BlendMode.Plus,
-            )
-        }
-        val reflectionCenter = Offset(
-            x = size.width * (0.34f + 0.025f * sin(phase)),
-            y = size.height * (0.25f + 0.018f * cos(phase * 2f)),
-        )
-        val reflectionRadius = radius * 0.22f
-        withTransform({
-            translate(reflectionCenter.x, reflectionCenter.y)
-            scale(reflectionRadius, reflectionRadius, pivot = Offset.Zero)
-        }) {
-            drawCircle(
-                brush = ReflectionBrush,
-                center = Offset.Zero,
-                radius = 1f,
-                blendMode = BlendMode.Screen,
-            )
-        }
-    }
-}
-
-
