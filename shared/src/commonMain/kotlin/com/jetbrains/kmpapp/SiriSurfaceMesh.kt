@@ -127,7 +127,7 @@ private val DiscTextureCoordinates: List<Offset> = DiscPoints.map { point ->
     )
 }
 
-// Baselines are the six Element 3D groups in the supplied AE project: two red, two blue and two
+// Baselines are the six Element 3D groups in reference/siri.aep: two red, two blue and two
 // teal copies of the same 922 x 922 ellipse. The ranges turn those authored poses into a seamless
 // loop while preserving each group's characteristic bend and twist.
 private val SurfaceSpecs = listOf(
