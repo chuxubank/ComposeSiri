@@ -22,6 +22,7 @@ internal val SheetSksl = """
 uniform float2 uSize;
 uniform float uTime;      // seconds
 uniform float uCount;     // number of sheets (1..4)
+uniform float uPass;      // 0 = body fill, 1 = rim
 
 const float PI = 3.14159265;
 
@@ -38,7 +39,7 @@ float profile(float u){
 
 // signed-ish distance to sheet k in its local frame; also returns (u, v) in uv
 float sheetSdf(float3 p, float twist, float bend, out float2 uv){
-    float L = 1.27;              // half length (shell radii): 85% of diameter x1.5
+    float L = 0.90;              // half length (shell radii): 85% of diameter x1.5
     float u = (p.x + L) / (2.0*L);
     // bend: centreline arcs in y, centred
     float xs = p.x / L;
@@ -48,7 +49,7 @@ float sheetSdf(float3 p, float twist, float bend, out float2 uv){
     float a = twist * (u - 0.5);
     float c = cos(a), s = sin(a);
     float2 yz = float2(c*q.y + s*q.z, -s*q.y + c*q.z);
-    float w = profile(clamp(u,0.0,1.0)) * 0.36;   // half width (shell radii)
+    float w = profile(clamp(u,0.0,1.0)) * 0.42;   // half width (shell radii)
     uv = float2(u, yz.x / max(w, 1e-4));
     float dz = abs(yz.y) - 0.004;
     float dy = abs(yz.x) - w;
@@ -79,10 +80,10 @@ half4 main(float2 fc){
         // per-sheet X/Y/Z rates (deg/s), AE: time*30 / time*45 / -time*30 / -time*45
         float3 rate = k == 0 ? float3(30.0, -45.0, 30.0) : (k == 1 ? float3(-45.0, 30.0, -30.0) : float3(45.0, 30.0, -45.0));
         float3 off = k == 0 ? float3(0.3, 0.2, 0.0) : (k == 1 ? float3(1.4, 2.1, 1.1) : float3(2.6, 0.9, 2.2));
-        float3 ang = off + rate * (PI/180.0) * t + float3(wig*0.35, wig*0.25, -wig*0.2);
+        float3 ang = off + rate * (PI/180.0) * t * 0.5 + float3(wig*0.35, wig*0.25, -wig*0.2);
         float3x3 R = rotZ(ang.z) * rotY(ang.y) * rotX(ang.x);
         float3x3 Ri = float3x3(R[0][0],R[1][0],R[2][0], R[0][1],R[1][1],R[2][1], R[0][2],R[1][2],R[2][2]);
-        float twist = 2.2 + wig * 0.6;
+        float twist = 1.4 + wig * 0.5;
         float bend = 0.35 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.08;
         float3 o = Ri * ro; float3 d = Ri * rd;
         float tt = 4.3; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0);
@@ -114,16 +115,19 @@ half4 main(float2 fc){
             float centre = 1.0 - smoothstep(0.15, 1.0, abs(2.0*uv.x - 1.0));
             float body = (0.18 + 0.82*centre) * (1.0 - fres) * (0.5 + 0.5*ring);
             float thinRim = pow(1.0 - ndv, 9.0);
-            float a = clamp(body*0.95 + thinRim*1.6, 0.0, 1.6) * fog;
-            acc += col.rgb * half(a) + half3(thinRim*0.45*fog);
+            if (uPass < 0.5) {
+                acc += col.rgb * half(clamp(body * 2.4, 0.0, 1.0) * 0.8 * fog);
+            } else {
+                acc += col.rgb * half(thinRim*0.9*fog) + half3(thinRim*0.25*fog);
+            }
         } else if (minD < 0.012) {
             // edge-on: sheet thinner than a pixel -> bright needle line
             float g = 1.0 - minD/0.012;
-            acc += (col.rgb*0.9 + half3(0.25)) * half(g*g*0.8);
+            if (uPass > 0.5) acc += (col.rgb*0.9 + half3(0.25)) * half(g*g*0.8);
         }
     }
     float r = length(p);
-    acc *= half(1.0 - smoothstep(0.985, 1.0, r));
+    acc *= half(1.0 - smoothstep(0.85, 1.0, r));
     return half4(acc, 1);
 }
 """
@@ -134,28 +138,64 @@ internal fun renderSheetStills(outDir: Path, count: Int, fps: Double, seconds: D
     val n = (fps * seconds).toInt().coerceAtLeast(1)
     for (i in 0 until n) {
         val t = i / fps
-        val b = RuntimeShaderBuilder(effect)
-        b.uniform("uSize", size.toFloat(), size.toFloat())
-        b.uniform("uTime", t.toFloat())
-        b.uniform("uCount", count.toFloat())
-        val shader = b.makeShader()
-        val base = Surface.makeRasterN32Premul(size, size)
-        base.canvas.clear(Color.BLACK)
-        base.canvas.drawPaint(Paint().apply { this.shader = shader })
-        val sheetImg = base.makeImageSnapshot()
+        fun pass(id: Float): org.jetbrains.skia.Image {
+            val b = RuntimeShaderBuilder(effect)
+            b.uniform("uSize", size.toFloat(), size.toFloat())
+            b.uniform("uTime", t.toFloat())
+            b.uniform("uCount", count.toFloat())
+            b.uniform("uPass", id)
+            val surf = Surface.makeRasterN32Premul(size, size)
+            surf.canvas.clear(Color.BLACK)
+            surf.canvas.drawPaint(Paint().apply { this.shader = b.makeShader() })
+            return surf.makeImageSnapshot()
+        }
+        val bodyImg = pass(0f)
+        val rimImg = pass(1f)
+        val radius = size * 0.45f
+        val cx = size / 2f
         val out = Surface.makeRasterN32Premul(size, size)
         val c = out.canvas
         c.clear(Color.BLACK)
-        // layered glow: wide + medium blur, then sharp sheet, all additive
+        // Shell base: very dark #2D2C32, heavily feathered.
+        c.drawCircle(cx, cx, radius * 0.9f, Paint().apply {
+            color = 0x662D2C32
+            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.12f)
+        })
         val k = size / 1740f
-        for ((sigma, alpha) in listOf(200f * k to 0.125f, 80f * k to 0.25f, 30f * k to 0.5f)) {
-            c.drawImage(sheetImg, 0f, 0f, Paint().apply {
+        // Body: big soft colour fields (blur ~8% radius) plus faint wide glows.
+        for ((sigma, alpha) in listOf(radius * 0.08f to 1f, 200f * k to 0.125f, 80f * k to 0.25f)) {
+            c.drawImage(bodyImg, 0f, 0f, Paint().apply {
                 imageFilter = ImageFilter.makeBlur(sigma, sigma, FilterTileMode.DECAL)
                 blendMode = BlendMode.PLUS
                 this.alpha = (alpha * 255).toInt()
             })
         }
-        c.drawImage(sheetImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })
+        // Rim: sharp layer plus tight glow.
+        c.drawImage(rimImg, 0f, 0f, Paint().apply {
+            imageFilter = ImageFilter.makeBlur(30f * k, 30f * k, FilterTileMode.DECAL)
+            blendMode = BlendMode.PLUS
+            this.alpha = 128
+        })
+        c.drawImage(rimImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })
+        // White core: small bright dot + fast falloff glow, ~30% radius.
+        for ((r, sig, col) in listOf(
+            Triple(radius * 0.10f, radius * 0.09f, 0x66FFFFFF),
+            Triple(radius * 0.05f, radius * 0.035f, 0xCCFFFFFF.toInt()),
+            Triple(radius * 0.035f, radius * 0.01f, 0xFFFFFFFF.toInt()),
+        )) {
+            c.drawCircle(cx, cx, r, Paint().apply {
+                color = col
+                blendMode = BlendMode.PLUS
+                maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, sig)
+            })
+        }
+        // 1px magenta outer ring #4D2D44.
+        c.drawCircle(cx, cx, radius, Paint().apply {
+            mode = org.jetbrains.skia.PaintMode.STROKE
+            strokeWidth = 1.2f
+            color = 0xFF4D2D44.toInt()
+            isAntiAlias = true
+        })
         val data = out.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG)!!
         Files.write(outDir.resolve("s%02d.png".format(i)), data.bytes)
     }
