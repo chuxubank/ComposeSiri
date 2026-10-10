@@ -76,7 +76,7 @@ half4 main(float2 fc){
     rd = normalize(float3(p / 5.85, -1.0));
     half3 acc = half3(0);
     float r = length(pS);
-    float radial = 1.0 - smoothstep(0.85, 1.0, r);
+    float radial = 1.0 - smoothstep(0.80, 0.97, r);
     float starBoost = 1.0 + 3.0 * exp(-(r/0.3)*(r/0.3));
     float dA = -1.0; float dB = -1.0; float dC = -1.0;
     half4 cA = half4(0); half4 cB = half4(0); half4 cC = half4(0);
@@ -129,7 +129,7 @@ half4 main(float2 fc){
             if (uPass < 0.5) {
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
-                float bri = mix(1.3, 0.35, v) * (1.0 + 0.8 * exp(-(r/0.18)*(r/0.18)) + 5.0 * pow(1.0 - ndv, 2.0) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.5 * fres);
+                float bri = mix(1.3, 0.35, v) * (1.0 + 0.8 * exp(-(r/0.18)*(r/0.18)) + 3.0 * pow(1.0 - ndv, 2.0) * exp(-(r/0.28)*(r/0.28))) * (1.0 + 0.5 * fres);
                 float a = mix(0.95, 0.4, v) * (1.0 - smoothstep(0.85, 1.0, v)) * (0.6 + 0.4*centre) * fog;
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (k == 0) { dA = tt; cA = c4; } else if (k == 1) { dB = tt; cB = c4; } else { dC = tt; cC = c4; }
@@ -139,7 +139,7 @@ half4 main(float2 fc){
                 float edgeLine = 1.0 - smoothstep(0.0, 0.08, vE);
                 float rimK = edgeLine * (0.35 + 0.65 * pow(1.0 - ndv, 2.0)) * starBoost;
                 half3 bright = mix(min(col.rgb * 1.35 + half3(0.12), half3(1.0)), half3(1.0), half(clamp((starBoost - 1.0) / 3.0, 0.0, 1.0)));
-                acc += bright * half(clamp(rimK * 2.2, 0.0, 5.0) * fog * fog * (1.0 - smoothstep(0.4, 0.85, r)));
+                acc += bright * half(clamp(rimK * 2.2, 0.0, 5.0) * fog * fog * (1.0 - smoothstep(0.35, 0.75, r)));
             }
         } else if (minD < 0.012) {
             // edge-on: sheet thinner than a pixel -> bright needle line
@@ -183,10 +183,11 @@ internal fun renderSheetStills(
     val tonemap = RuntimeEffect.makeForShader("""
         uniform shader img;
         uniform float2 uSize;
+        uniform float uFade;
         half4 main(float2 c) {
             float rr = length(c - 0.5*uSize) / (0.45*uSize.x);
             half3 x = max(img.eval(c).rgb, half3(0)) * 0.9;
-            x *= half(1.0 - smoothstep(1.0, 1.12, rr));
+            x *= half((1.0 - smoothstep(1.0, 1.08, rr)) * uFade);
             x = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
             half l = dot(x, half3(0.2126, 0.7152, 0.0722));
             x = clamp(mix(half3(l), x, 1.3), 0.0, 1.0);
@@ -276,17 +277,18 @@ internal fun renderSheetStills(
         val tb = RuntimeShaderBuilder(tonemap)
         tb.child("img", out.makeImageSnapshot().makeShader())
         tb.uniform("uSize", size.toFloat(), size.toFloat())
+        tb.uniform("uFade", prm.fade.coerceIn(0f, 1f))
         val fin = Surface.makeRasterN32Premul(size, size)
         fin.canvas.drawPaint(Paint().apply { shader = tb.makeShader() })
         val fc = fin.canvas
         // Shell glow after tonemap: 30%, ring 0.85..1.0 only.
         // Interior base #2D2C32, feathered edge; outside stays black.
         fc.drawCircle(cx, cx, radius * 0.96f, Paint().apply {
-            color = 0x592D2C32
+            color = ((0x59 * prm.fade.coerceIn(0f, 1f)).toInt() shl 24) or 0x2D2C32
             blendMode = BlendMode.PLUS
             maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.03f)
         })
-        fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = 153 })
+        fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (153 * prm.fade.coerceIn(0f, 1f)).toInt() })
         fc.drawImage(bodyImg, 0f, 0f, Paint().apply {
             imageFilter = ImageFilter.makeBlur(radius * 0.3f, radius * 0.3f, FilterTileMode.DECAL)
             // linear body is dark after a 30% blur: x3 gain, sRGB-ish lift
@@ -303,14 +305,9 @@ internal fun renderSheetStills(
         fc.drawCircle(cx, cx, radius, Paint().apply {
             mode = org.jetbrains.skia.PaintMode.STROKE
             strokeWidth = 1.2f
-            color = 0x594D2D44
+            color = ((0x59 * prm.fade.coerceIn(0f, 1f)).toInt() shl 24) or 0x4D2D44
             isAntiAlias = true
         })
-        if (prm.fade < 0.999f) {
-            fc.drawRect(org.jetbrains.skia.Rect.makeWH(size.toFloat(), size.toFloat()), Paint().apply {
-                color = (((1f - prm.fade.coerceIn(0f, 1f)) * 255).toInt() shl 24)
-            })
-        }
         val data = fin.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG)!!
         Files.write(outDir.resolve("$prefix%03d.png".format(i)), data.bytes)
     }
@@ -323,9 +320,9 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0, perState: Double 
         Target("Appear", 1.0f, 1.0f, 1.0f, 1.0f, 1f),
         Target("Idle", 1.0f, 1.0f, 1.0f, 1.0f, 1f),
         Target("Listening", 1.3f, 1.3f, 1.0f, 1.0f, 1f),
-        Target("Processing", 2.4f, 1.8f, 0.92f, 0.8f, 1f),
+        Target("Processing", 2.4f, 1.8f, 0.85f, 0.8f, 1f),
         Target("Result", 0.6f, 0.6f, 1.04f, 1.25f, 1f),
-        Target("Disappear", 1.0f, 1.0f, 0.0f, 0.0f, 0f),
+        Target("Disappear", 1.0f, 1.0f, 0.0f, 0.0f, 1f),
     )
     var speed = 1f; var flip = 1f; var scale = 0.0f; var core = 0f; var fade = 0f; var spinT = 0f
     val n = (states.size * perState * fps).toInt()
@@ -333,17 +330,36 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0, perState: Double 
     val ease = 1f - kotlin.math.exp(-dt / 0.35f)   // ~0.35 s critically-damped-ish ease
     val labels = StringBuilder()
     renderSheetStills(outDir, 3, fps, n / fps, prefix = "d", paramsAt = { i, t ->
-        val st = states[(t / perState).toInt().coerceIn(0, states.lastIndex)]
+        val si = (t / perState).toInt().coerceIn(0, states.lastIndex)
+        val st = states[si]
+        val tE = (t - si * perState).toFloat()
         speed += (st.speed - speed) * ease; flip += (st.flip - flip) * ease
         scale += (st.scale - scale) * ease; core += (st.core - core) * ease; fade += (st.fade - fade) * ease
         spinT += speed * dt
         val voice = if (st.name == "Listening") {
             val syl = kotlin.math.abs(kotlin.math.sin(t * 12.6)).toFloat()
             val phrase = (0.5 + 0.5 * kotlin.math.sin(t * 2.1)).toFloat()
-            (syl * phrase - 0.5f) * 0.3f      // about +-15%
+            (syl * phrase - 0.5f) * 0.4f      // about +-20%
         } else 0f
         labels.append("$i ${st.name}\n")
-        OrbParams(spinT, flip, scale * (1f + voice), core * (1f + voice), fade)
+        var dScale = 0f; var dCore = 0f; var outFade = fade
+        when (st.name) {
+            "Processing" -> dCore = 0.2f * kotlin.math.sin(2.0 * Math.PI * 1.5 * tE).toFloat()   // 0.6..1.0
+            "Result" -> {
+                dCore = 0.35f * (1f - smoothstepF(0f, 0.4f, tE))                                // flash 1.6 -> 1.25
+                dScale = -0.04f * kotlin.math.exp(-1.5f * tE) * kotlin.math.cos(10f * tE)        // spring 1.0 -> ~1.07 -> 1.04
+            }
+            "Disappear" -> {
+                // shrink to centre, then ~0.15 s core flash, then off
+                dCore = if (tE in 0.7f..0.85f) 1.6f else 0f
+                outFade = if (tE < 0.85f) 1f else (1f - (tE - 0.85f) / 0.15f).coerceIn(0f, 1f)
+            }
+        }
+        OrbParams(spinT, flip, (scale + dScale) * (1f + voice), (core + dCore) * (1f + voice), outFade)
     })
     Files.writeString(outDir.resolve("labels.txt"), labels.toString())
+}
+
+private fun smoothstepF(a: Float, b: Float, x: Float): Float {
+    val t = ((x - a) / (b - a)).coerceIn(0f, 1f); return t * t * (3f - 2f * t)
 }
