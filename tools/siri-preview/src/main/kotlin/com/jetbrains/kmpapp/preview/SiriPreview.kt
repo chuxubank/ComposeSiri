@@ -57,6 +57,11 @@ private data class PreviewArgs(
 @OptIn(ExperimentalComposeUiApi::class)
 fun main(args: Array<String>) {
     System.setProperty("java.awt.headless", "true")
+    if ("--sheet-demo" in args) {
+        val outIdx = args.indexOf("--out")
+        renderSheetDemo(java.nio.file.Paths.get(if (outIdx >= 0) args[outIdx + 1] else "/tmp/sheetdemo"))
+        return
+    }
     val sheetIdx = args.indexOf("--sheets")
     if (sheetIdx >= 0) {
         val outIdx = args.indexOf("--out")

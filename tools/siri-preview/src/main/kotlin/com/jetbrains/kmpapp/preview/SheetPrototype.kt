@@ -23,6 +23,9 @@ uniform float2 uSize;
 uniform float uTime;      // seconds
 uniform float uCount;     // number of sheets (1..4)
 uniform float uPass;      // 0 = body fill, 1 = rim
+uniform float uSpinT;     // integrated spin time (s): speed scale applied on CPU
+uniform float uFlip;      // drift/flip amplitude scale
+uniform float uScale;     // sheet scale
 
 const float PI = 3.14159265;
 
@@ -38,7 +41,7 @@ float profile(float u){
 }
 
 // signed-ish distance to sheet k in its local frame; also returns (u, v) in uv
-float sheetSdf(float3 p, float twist, float bend, out float2 uv){
+float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
     float L = 1.05;              // half length (shell radii): 85% of diameter x1.5
     float u = (p.x + L) / (2.0*L);
     // bend: centreline arcs in y, centred
@@ -49,7 +52,7 @@ float sheetSdf(float3 p, float twist, float bend, out float2 uv){
     float a = twist * (u - 0.5);
     float c = cos(a), s = sin(a);
     float2 yz = float2(c*q.y + s*q.z, -s*q.y + c*q.z);
-    float w = profile(clamp(u,0.0,1.0)) * 0.55;   // half width (shell radii)
+    float w = profile(clamp(u,0.0,1.0)) * 0.55 * ws;   // half width (shell radii)
     uv = float2(u, yz.x / max(w, 1e-4));
     float vv = clamp(yz.x / max(w, 1e-4), -1.0, 1.0);
     float dz = abs(yz.y - 0.18 * w * vv * vv) - 0.004;
@@ -61,17 +64,18 @@ float sheetSdf(float3 p, float twist, float bend, out float2 uv){
 half4 sheetColor(int k){
     if (k == 0) return half4(1.0, 0.176, 0.333, 1);   // #FF2D55
     if (k == 1) return half4(0.039, 0.518, 1.0, 1);   // #0A84FF
-    return half4(0.0, 1.0, 0.8, 1);                   // #00FFCC
+    return half4(0.235, 0.878, 0.91, 1);              // #3CE0E8
 }
 
 half4 main(float2 fc){
-    float2 p = (fc - 0.5*uSize) / (0.45*uSize.x);   // ribbons fill the glass
+    float2 pS = (fc - 0.5*uSize) / (0.45*uSize.x);
+    float2 p = pS / uScale;   // ribbons fill the glass
     p.y = -p.y;
     float3 ro = float3(0, 0, 5.85);                  // camera 2700/461
     float3 rd = normalize(float3(p * (1.0/5.85) * 5.85 / 5.85, -1.0));
     rd = normalize(float3(p / 5.85, -1.0));
     half3 acc = half3(0);
-    float r = length(p);
+    float r = length(pS);
     float radial = 1.0 - smoothstep(0.85, 1.0, r);
     float starBoost = 1.0 + 3.0 * exp(-(r/0.3)*(r/0.3));
     float dA = -1.0; float dB = -1.0; float dC = -1.0;
@@ -82,11 +86,12 @@ half4 main(float2 fc){
         float t = uTime;
         // AE: time*45+value / -time*30+value deg/s, counter-rotating groups; wiggle(0.2,10/15)
         float spin = (mod(fk,2.0) < 0.5 ? 45.0 : -30.0) * PI/180.0;
-        float wig = sin(t*1.257 + fk*1.9) * 0.6 + sin(t*0.71 + fk*3.1) * 0.4;
+        float wig = (sin(t*1.257 + fk*1.9) * 0.6 + sin(t*0.71 + fk*3.1) * 0.4) * uFlip;
+        float ws = k == 2 ? 0.8 : 1.0;
         // per-sheet X/Y/Z rates (deg/s), AE: time*30 / time*45 / -time*30 / -time*45
         float3 rate = k == 0 ? float3(30.0, -45.0, 30.0) : (k == 1 ? float3(-45.0, 30.0, -30.0) : float3(45.0, 30.0, -45.0));
         float3 off = k == 0 ? float3(0.3, 0.2, 0.0) : (k == 1 ? float3(1.4, 2.1, 1.1) : float3(2.6, 0.9, 2.2));
-        float3 ang = off + rate * (PI/180.0) * t * 0.5 + float3(wig*0.35, wig*0.25, -wig*0.2);
+        float3 ang = off + rate * (PI/180.0) * uSpinT * 0.5 + float3(wig*0.35, wig*0.25, -wig*0.2);
         float3x3 R = rotZ(ang.z) * rotY(ang.y) * rotX(ang.x);
         float3x3 Ri = float3x3(R[0][0],R[1][0],R[2][0], R[0][1],R[1][1],R[2][1], R[0][2],R[1][2],R[2][2]);
         float twist = 1.4 + wig * 0.5;
@@ -95,7 +100,7 @@ half4 main(float2 fc){
         float tt = 4.3; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0);
         for (int i = 0; i < 72; i++) {
             float3 pos = o + d*tt;
-            float dd = sheetSdf(pos, twist, bend, uv);
+            float dd = sheetSdf(pos, twist, bend, ws, uv);
             if (dd < minD) { minD = dd; nearUv = uv; }
             if (dd < 0.0008) { hit = true; break; }
             tt += max(dd * 0.55, 0.002);
@@ -106,9 +111,9 @@ half4 main(float2 fc){
             float3 pos = o + d*tt; float2 tmp;
             float e = 0.002;
             float3 n = normalize(float3(
-                sheetSdf(pos+float3(e,0,0),twist,bend,tmp)-sheetSdf(pos-float3(e,0,0),twist,bend,tmp),
-                sheetSdf(pos+float3(0,e,0),twist,bend,tmp)-sheetSdf(pos-float3(0,e,0),twist,bend,tmp),
-                sheetSdf(pos+float3(0,0,e),twist,bend,tmp)-sheetSdf(pos-float3(0,0,e),twist,bend,tmp)));
+                sheetSdf(pos+float3(e,0,0),twist,bend,ws,tmp)-sheetSdf(pos-float3(e,0,0),twist,bend,ws,tmp),
+                sheetSdf(pos+float3(0,e,0),twist,bend,ws,tmp)-sheetSdf(pos-float3(0,e,0),twist,bend,ws,tmp),
+                sheetSdf(pos+float3(0,0,e),twist,bend,ws,tmp)-sheetSdf(pos-float3(0,0,e),twist,bend,ws,tmp)));
             float ndv = abs(dot(n, -d));
             float fres = pow(1.0 - ndv, 4.0);
             // feathered ring texture: transparent middle, colour toward one edge (AE inverted circle mask)
@@ -124,7 +129,7 @@ half4 main(float2 fc){
             if (uPass < 0.5) {
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
-                float bri = mix(1.3, 0.35, v) * (1.0 + 1.5 * exp(-(r/0.18)*(r/0.18))) * (1.0 + 0.5 * fres);
+                float bri = mix(1.3, 0.35, v) * (1.0 + 0.8 * exp(-(r/0.18)*(r/0.18)) + 5.0 * pow(1.0 - ndv, 2.0) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.5 * fres);
                 float a = mix(0.95, 0.4, v) * (1.0 - smoothstep(0.85, 1.0, v)) * (0.6 + 0.4*centre) * fog;
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (k == 0) { dA = tt; cA = c4; } else if (k == 1) { dB = tt; cB = c4; } else { dC = tt; cC = c4; }
@@ -134,7 +139,7 @@ half4 main(float2 fc){
                 float edgeLine = 1.0 - smoothstep(0.0, 0.08, vE);
                 float rimK = edgeLine * (0.35 + 0.65 * pow(1.0 - ndv, 2.0)) * starBoost;
                 half3 bright = mix(min(col.rgb * 1.35 + half3(0.12), half3(1.0)), half3(1.0), half(clamp((starBoost - 1.0) / 3.0, 0.0, 1.0)));
-                acc += bright * half(clamp(rimK * 2.2, 0.0, 5.0) * fog * fog);
+                acc += bright * half(clamp(rimK * 2.2, 0.0, 5.0) * fog * fog * (1.0 - smoothstep(0.4, 0.85, r)));
             }
         } else if (minD < 0.012) {
             // edge-on: sheet thinner than a pixel -> bright needle line
@@ -157,7 +162,15 @@ half4 main(float2 fc){
 }
 """
 
-internal fun renderSheetStills(outDir: Path, count: Int, fps: Double, seconds: Double, size: Int = 870) {
+internal data class OrbParams(
+    val spinT: Float, val flip: Float = 1f, val scale: Float = 1f, val core: Float = 1f, val fade: Float = 1f,
+)
+
+internal fun renderSheetStills(
+    outDir: Path, count: Int, fps: Double, seconds: Double, size: Int = 870,
+    prefix: String = "s",
+    paramsAt: (Int, Double) -> OrbParams = { _, t -> OrbParams(spinT = t.toFloat()) },
+) {
     val effect = RuntimeEffect.makeForShader(SheetSksl)
     val threshold = RuntimeEffect.makeForShader("""
         uniform shader img;
@@ -184,12 +197,16 @@ internal fun renderSheetStills(outDir: Path, count: Int, fps: Double, seconds: D
     val n = (fps * seconds).toInt().coerceAtLeast(1)
     for (i in 0 until n) {
         val t = i / fps
+        val prm = paramsAt(i, t)
         fun pass(id: Float): org.jetbrains.skia.Image {
             val b = RuntimeShaderBuilder(effect)
             b.uniform("uSize", size.toFloat(), size.toFloat())
             b.uniform("uTime", t.toFloat())
             b.uniform("uCount", count.toFloat())
             b.uniform("uPass", id)
+            b.uniform("uSpinT", prm.spinT)
+            b.uniform("uFlip", prm.flip)
+            b.uniform("uScale", prm.scale)
             val surf = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
             surf.canvas.clear(Color.BLACK)
             surf.canvas.drawPaint(Paint().apply { this.shader = b.makeShader() })
@@ -227,12 +244,17 @@ internal fun renderSheetStills(outDir: Path, count: Int, fps: Double, seconds: D
             Triple(radius * 0.11f, radius * 0.08f, 1),
             Triple(radius * 0.06f, radius * 0.035f, 2),
             Triple(radius * 0.025f, radius * 0.01f, 4),
-        )) repeat(reps) {
-            c.drawCircle(cx, cx, r, Paint().apply {
-                color = 0xFFFFFFFF.toInt()
+        )) {
+          val total = reps * prm.core
+          var left = total
+          while (left > 0.001f) {
+            val a = left.coerceAtMost(1f); left -= a
+            c.drawCircle(cx, cx, r * prm.scale.coerceIn(0.5f, 1.5f), Paint().apply {
+                color = ((a * 255).toInt() shl 24) or 0xFFFFFF
                 blendMode = BlendMode.PLUS
                 maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, sig)
             })
+          }
         }
         val sceneImg = scene.makeImageSnapshot()
         // 2) Threshold: keep HDR luminance above 1.0, then wide glows 0.15 / 0.3.
@@ -284,7 +306,44 @@ internal fun renderSheetStills(outDir: Path, count: Int, fps: Double, seconds: D
             color = 0x594D2D44
             isAntiAlias = true
         })
+        if (prm.fade < 0.999f) {
+            fc.drawRect(org.jetbrains.skia.Rect.makeWH(size.toFloat(), size.toFloat()), Paint().apply {
+                color = (((1f - prm.fade.coerceIn(0f, 1f)) * 255).toInt() shl 24)
+            })
+        }
         val data = fin.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG)!!
-        Files.write(outDir.resolve("s%02d.png".format(i)), data.bytes)
+        Files.write(outDir.resolve("$prefix%03d.png".format(i)), data.bytes)
     }
+}
+
+/** Six-state demo in the preview: eased params per state, synthetic voice envelope. */
+internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0, perState: Double = 3.0) {
+    data class Target(val name: String, val speed: Float, val flip: Float, val scale: Float, val core: Float, val fade: Float)
+    val states = listOf(
+        Target("Appear", 1.0f, 1.0f, 1.0f, 1.0f, 1f),
+        Target("Idle", 1.0f, 1.0f, 1.0f, 1.0f, 1f),
+        Target("Listening", 1.3f, 1.3f, 1.0f, 1.0f, 1f),
+        Target("Processing", 2.4f, 1.8f, 0.92f, 0.8f, 1f),
+        Target("Result", 0.6f, 0.6f, 1.04f, 1.25f, 1f),
+        Target("Disappear", 1.0f, 1.0f, 0.0f, 0.0f, 0f),
+    )
+    var speed = 1f; var flip = 1f; var scale = 0.0f; var core = 0f; var fade = 0f; var spinT = 0f
+    val n = (states.size * perState * fps).toInt()
+    val dt = (1.0 / fps).toFloat()
+    val ease = 1f - kotlin.math.exp(-dt / 0.35f)   // ~0.35 s critically-damped-ish ease
+    val labels = StringBuilder()
+    renderSheetStills(outDir, 3, fps, n / fps, prefix = "d", paramsAt = { i, t ->
+        val st = states[(t / perState).toInt().coerceIn(0, states.lastIndex)]
+        speed += (st.speed - speed) * ease; flip += (st.flip - flip) * ease
+        scale += (st.scale - scale) * ease; core += (st.core - core) * ease; fade += (st.fade - fade) * ease
+        spinT += speed * dt
+        val voice = if (st.name == "Listening") {
+            val syl = kotlin.math.abs(kotlin.math.sin(t * 12.6)).toFloat()
+            val phrase = (0.5 + 0.5 * kotlin.math.sin(t * 2.1)).toFloat()
+            (syl * phrase - 0.5f) * 0.3f      // about +-15%
+        } else 0f
+        labels.append("$i ${st.name}\n")
+        OrbParams(spinT, flip, scale * (1f + voice), core * (1f + voice), fade)
+    })
+    Files.writeString(outDir.resolve("labels.txt"), labels.toString())
 }
