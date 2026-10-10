@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.paint
@@ -61,19 +62,6 @@ internal data class SiriOrbStyle(
     val errorAmount: Float,
 )
 
-private data class TargetOrbStyle(
-    val sizeScale: Float,
-    val motionScale: Float,
-    val opacityScale: Float,
-    val bloomScale: Float,
-    val bloomAlpha: Float,
-    val redWeight: Float,
-    val blueWeight: Float,
-    val tealWeight: Float,
-    val pulseAmount: Float,
-    val errorAmount: Float,
-)
-
 internal val SiriBlue = Color(0xFF0021FF)
 internal val SiriTeal = Color(0xFF23FFE6)
 internal val SiriRed = Color(0xFFFF1212)
@@ -99,6 +87,12 @@ private val ReflectionBrush = Brush.radialGradient(
  * [audioLevel] is sampled while [state] is [SiriOrbState.Speaking] or [SiriOrbState.Error] to
  * drive the breathing response. The caller controls the component size through [modifier].
  */
+/**
+ * A Siri-inspired animated orb built from six bent and twisted 3D ellipse surfaces.
+ *
+ * [audioLevel] is sampled while [state] is [SiriOrbState.Speaking] or [SiriOrbState.Error] to
+ * drive the breathing response. The caller controls the component size through [modifier].
+ */
 @Composable
 fun SiriOrb(
     modifier: Modifier = Modifier,
@@ -106,16 +100,52 @@ fun SiriOrb(
     audioLevel: Float = 0.65f,
 ) {
     val transition = rememberInfiniteTransition(label = "Siri orb")
-    val phase = transition.animateFloat(
+    val time = transition.animateFloat(
         initialValue = 0f,
-        targetValue = TwoPi,
+        targetValue = ReferenceLoopMillis.toFloat(),
         animationSpec = infiniteRepeatable(
             animation = tween(ReferenceLoopMillis, easing = LinearEasing),
         ),
-        label = "Siri orb phase",
+        label = "Siri orb time",
     )
+    SiriOrbFrame(
+        modifier = modifier,
+        timeMillis = time.value.toLong(),
+        audioLevel = audioLevel,
+        style = animatedStyle(state),
+    )
+}
+
+/**
+ * One still frame of [SiriOrb] at an explicit [timeMillis] in the reference loop.
+ *
+ * [timeMillis] is taken modulo the loop period so values beyond one cycle wrap.
+ * Style is the target look for [state], with no state-to-state animation.
+ */
+@Composable
+fun SiriOrbFrame(
+    modifier: Modifier = Modifier,
+    state: SiriOrbState = SiriOrbState.Listening,
+    timeMillis: Long,
+    audioLevel: Float = 0.65f,
+) {
+    SiriOrbFrame(
+        modifier = modifier,
+        timeMillis = timeMillis,
+        audioLevel = audioLevel,
+        style = state.targetStyle(),
+    )
+}
+
+@Composable
+private fun SiriOrbFrame(
+    modifier: Modifier,
+    timeMillis: Long,
+    audioLevel: Float,
+    style: SiriOrbStyle,
+) {
+    val phaseState = rememberUpdatedState(siriOrbPhase(timeMillis))
     val volumePainter = remember { volumePainter() }
-    val style = animatedStyle(state)
 
     Box(modifier = modifier.aspectRatio(1f)) {
         OrbShell(Modifier.matchParentSize())
@@ -137,17 +167,22 @@ fun SiriOrb(
                     .paint(volumePainter),
             )
             SiriSurfaceField(
-                phaseState = phase,
+                phaseState = phaseState,
                 style = style,
                 audioLevel = audioLevel.coerceIn(0f, 1f),
                 modifier = Modifier.matchParentSize(),
             )
             OrbGlass(
-                phaseState = phase,
+                phaseState = phaseState,
                 modifier = Modifier.matchParentSize(),
             )
         }
     }
+}
+
+private fun siriOrbPhase(timeMillis: Long): Float {
+    val loopMillis = timeMillis.mod(ReferenceLoopMillis.toLong())
+    return TwoPi * loopMillis / ReferenceLoopMillis
 }
 
 @Composable
@@ -178,7 +213,7 @@ fun SiriOrbScreen(
 private fun animatedStyle(state: SiriOrbState): SiriOrbStyle {
     val transition = updateTransition(targetState = state, label = "Siri state")
     val animationSpec = tween<Float>(durationMillis = 850, easing = FastOutSlowInEasing)
-    fun target(value: SiriOrbState): TargetOrbStyle = value.targetStyle()
+    fun target(value: SiriOrbState): SiriOrbStyle = value.targetStyle()
     return SiriOrbStyle(
         sizeScale = transition.animateFloat({ animationSpec }, label = "Siri size") {
             target(it).sizeScale
@@ -213,8 +248,8 @@ private fun animatedStyle(state: SiriOrbState): SiriOrbStyle {
     )
 }
 
-private fun SiriOrbState.targetStyle(): TargetOrbStyle = when (this) {
-    SiriOrbState.Idle -> TargetOrbStyle(
+private fun SiriOrbState.targetStyle(): SiriOrbStyle = when (this) {
+    SiriOrbState.Idle -> SiriOrbStyle(
         sizeScale = 0.68f,
         motionScale = 0.16f,
         opacityScale = 0.22f,
@@ -227,7 +262,7 @@ private fun SiriOrbState.targetStyle(): TargetOrbStyle = when (this) {
         errorAmount = 0f,
     )
 
-    SiriOrbState.Listening -> TargetOrbStyle(
+    SiriOrbState.Listening -> SiriOrbStyle(
         sizeScale = 1f,
         motionScale = 1f,
         opacityScale = 1f,
@@ -240,7 +275,7 @@ private fun SiriOrbState.targetStyle(): TargetOrbStyle = when (this) {
         errorAmount = 0f,
     )
 
-    SiriOrbState.Thinking -> TargetOrbStyle(
+    SiriOrbState.Thinking -> SiriOrbStyle(
         sizeScale = 0.92f,
         motionScale = 1.34f,
         opacityScale = 0.92f,
@@ -253,7 +288,7 @@ private fun SiriOrbState.targetStyle(): TargetOrbStyle = when (this) {
         errorAmount = 0f,
     )
 
-    SiriOrbState.Speaking -> TargetOrbStyle(
+    SiriOrbState.Speaking -> SiriOrbStyle(
         sizeScale = 1f,
         motionScale = 0.72f,
         opacityScale = 1f,
@@ -266,7 +301,7 @@ private fun SiriOrbState.targetStyle(): TargetOrbStyle = when (this) {
         errorAmount = 0f,
     )
 
-    SiriOrbState.Error -> TargetOrbStyle(
+    SiriOrbState.Error -> SiriOrbStyle(
         sizeScale = 0.84f,
         motionScale = 0.50f,
         opacityScale = 0.90f,
