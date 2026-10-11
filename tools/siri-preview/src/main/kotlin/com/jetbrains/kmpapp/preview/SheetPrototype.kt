@@ -296,7 +296,8 @@ half4 main(float2 fc){
                 float zw = (R * (pos * sc)).z + offW.z;
                 float wf = smoothstep(mix(-0.08, -0.75, uIdle), mix(0.08, -0.35, uIdle), zw);   // r39 idle: only the far back gets depth blur, wide transition (no radial stripes)   // r38 idle: no hard radial cut at z=0 (fan-blade stripes)
                 if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
-                bri *= mix(1.0, mix(0.6, 1.0, wf), uIdle);   // r51f idle depth: far (back-layer) sheets at 0.6 brightness
+                bri *= mix(1.0, mix(0.5, 1.0, wf), uIdle);   // r54: far-layer brightness 0.5
+                float dEdgeR = (1.0 - abs(uv.y)) * sheetHalfW(pos, ws); float faceShade = mix(1.0, 0.45, smoothstep(0.0, 0.08, dEdgeR)); bri *= mix(1.0, mix(faceShade, 1.0, smoothstep(0.55, 0.7, sideS)), uIdle);   // r54: face interior 0.45 rising to 1.0 within 0.08R of the contour; blades keep full
                 float rS = r / max(uScale, 0.05);   // radius relative to orb size (small appear orb is not all 'centre')
                 float edgeOnly = mix(1.0, smoothstep(0.45, 0.95, abs(uv.y)), uRes);
                 float bR = mix(0.45, 0.12, uIdle);
@@ -307,10 +308,10 @@ half4 main(float2 fc){
                 float dEdgePx = (1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / max(pxW / 1.5, 1e-6);   // r46: analytic distance to the sheet edge in pixels   // r50e: pxW is 1.5 screen px, so divide by pxW/1.5 to get true pixels
                 float fwE = 1.0;   // r50e: Skia runtime SkSL has no fwidth/dFdx; dEdgePx is already in screen pixels (divided by pxW), so the AA width is a constant 1 px
                 float lineCore = 1.0 - smoothstep(2.0 - 0.5 * fwE, 2.0 + 0.5 * fwE, dEdgePx);   // r50e: fixed 2 px core, fwidth + smoothstep AA
-                float lineSoft = exp(-(dEdgePx * dEdgePx) / 12.5);   // r50e: ~5 px same-colour soft glow
-                float edge6 = mix(lineSoft * 0.4, 1.0, lineCore) * smoothstep(0.6, 0.7, sideS) * (1.0 - uIdle);   // r46: only side-on sheets get the analytic bright line   // r50d: gate the blade line by the whole-sheet side-on value; the per-pixel slab normal flips at every silhouette pixel and drew dotted white outlines on face-on sheets // r52: idle off - the edge line keyed on distance-to-rim only fires on scattered ray hits along edge-on sheet silhouettes = the dotted white lines
+                float lineSoft = exp(-(dEdgePx * dEdgePx) / 32.0);   // r54: ~8 px same-colour soft glow
+                float edge6 = mix(lineSoft * 0.4, 1.0, lineCore) * smoothstep(0.6, 0.7, sideS);   // r46: only side-on sheets get the analytic bright line   // r50d: gate the blade line by the whole-sheet side-on value; the per-pixel slab normal flips at every silhouette pixel and drew dotted white outlines on face-on sheets // r52: idle off - the edge line keyed on distance-to-rim only fires on scattered ray hits along edge-on sheet silhouettes = the dotted white lines // r54: idle on again (8 px soft); min-slab 2.5 px keeps hits continuous
                 bri *= mix(1.0, 1.0 + 3.0 * q1 * edge6 * whiteR, uIdle);   // r46: boost only the analytic edge line near the centre
-                bri *= mix(1.0, mix(0.8, 1.3, edge6), uIdle);   // r50b idle: sheet face x0.8, side-on blade line x1.3
+                bri *= mix(1.0, mix(1.0, 1.5, edge6), uIdle);   // r54: blade core x1.5 (faces use faceShade, not x0.8)
                 a *= aaK * uBodyA;
                 // listening: inner edge coverage over ~1.5 px (distance to the petal edge in pixels)
                 float wE = sheetHalfW(pos, ws);
@@ -497,7 +498,7 @@ internal fun renderSheetStills(
             val front = pass(0f, 1f); val backImg = pass(0f, 2f)
             val bs = f16(); bs.canvas.clear(Color.BLACK)
             val bb = mixF(radius * 0.04f, 3f * size / 870f, id) * (1f - prm.proc) + 0.01f   // r51f idle: back-layer blur ~3 px
-            bs.canvas.drawImage(backImg, 0f, 0f, Paint().apply { imageFilter = ImageFilter.makeBlur(bb, bb, FilterTileMode.DECAL); blendMode = BlendMode.PLUS })
+            bs.canvas.drawImage(backImg, 0f, 0f, Paint().apply { imageFilter = ImageFilter.makeBlur(bb, bb, FilterTileMode.DECAL); blendMode = BlendMode.SRC_OVER })   // r54: OVER not PLUS so back RGB is not added under the front
             bs.canvas.drawImage(front, 0f, 0f, Paint().apply { blendMode = BlendMode.SRC_OVER })   // front sharp, OVER the blurred back
             bs.makeImageSnapshot()
         } else pass(0f)
@@ -508,7 +509,7 @@ internal fun renderSheetStills(
         c.clear(Color.BLACK)
         c.drawImage(bodyImg, 0f, 0f, Paint().apply {
             imageFilter = ImageFilter.makeBlur(mixF(0.6f, 0.001f, id), mixF(0.6f, 0.001f, id), FilterTileMode.DECAL)   // r37 idle: front sheets blur 0
-            blendMode = BlendMode.PLUS
+            blendMode = if (id > 0.5f) BlendMode.SRC_OVER else BlendMode.PLUS   // r54 idle: body OVER (shader already depth-sorted OVER); keep PLUS for non-idle HDR path
         })
         // White spill: pure white (luminance of sheet coverage only, no hue), Screen, falls to 0 by 0.3R.
         run {
