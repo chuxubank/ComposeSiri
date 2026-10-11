@@ -251,7 +251,7 @@ half4 main(float2 fc){
         half4 col = half4(pow(baseC, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
         // analytic AA: near-miss within ~1 px still contributes with fractional coverage
-        if (!hit && minD < pxW * mix(1.0, 2.0, uIdle) && uPass < 0.5 && uProc < 0.01) { hit = true; tt = nearT; aaK = 1.0 - minD / (pxW * mix(1.0, 2.0, uIdle)); }   // r50m idle: wider near-miss window so edge-on blades are not dropped by the march (dotted white line).
+        if (!hit && uIdle < 0.5 && minD < pxW * mix(1.0, 2.0, uIdle) && uPass < 0.5 && uProc < 0.01) { hit = true; tt = nearT; aaK = 1.0 - minD / (pxW * mix(1.0, 2.0, uIdle)); }   // r50m idle: wider near-miss window so edge-on blades are not dropped by the march (dotted white line). // r58: idle main pass takes no near-miss hits (they were scattered grazing samples beside edge-on blades = blue dotted residual); only the blade core pass keeps them so the core line stays continuous // r58b: blade pass also drops near-miss (its a = coreK override discarded aaK, so grazing near-misses drew a white dotted twin line); 2.5px min slab already keeps blades continuous
         if (hit && (uListen > 0.01 || uIdle > 0.01)) {
             // refine the hit depth (stable depth order where petals intersect; removes notched intersection lines)
             for (int r2 = 0; r2 < 4; r2++) { float2 uvR; tt += sheetSdf(o + d*tt, twist, bend, ws, uvR) * 0.9; }
