@@ -34,6 +34,8 @@ uniform float uGather;    // result: drops gathered into a bright white cluster
 uniform float uOrbit;     // shared orbit angle (rad)
 uniform float uTangle;    // appear: 1 = twisted/compressed pose, 0 = unwound
 uniform float uBlend;     // body compositing: 0 = OVER (depth sorted), 1 = Screen
+uniform float uGrey;      // grey/desaturation amount of the drops (decoupled from shape in Result)
+uniform float uListen;    // listening: rounder petals, brighter, slightly less blue
 uniform float uLayer;     // 0 = all, 1 = front half only, 2 = behind-centre half only (depth blur)
 
 const float PI = 3.14159265;
@@ -49,7 +51,7 @@ float profile(float u){
     float oval = sqrt(max(1.0 - (2.0*u-1.0)*(2.0*u-1.0), 0.0));
     // drop: round head, thin tail: sin(pi t)^0.6 * (1 - 0.6 t)
     float drop = pow(m, 0.6) * (1.0 - 0.6*u) * 1.3;
-    return mix(pow(m, 0.7), drop, uProc);   // ribbons: full lens-shaped middle, pointed tips
+    return mix(pow(m, mix(0.7, 0.45, uListen)), drop, uProc);   // ribbons: full lens-shaped middle, pointed tips
 }
 
 // signed-ish distance to sheet k in its local frame; also returns (u, v) in uv
@@ -106,6 +108,7 @@ half4 main(float2 fc){
         float wig = (sin(t*1.257 + fk*1.9) * 0.6 + sin(t*0.71 + fk*3.1) * 0.4) * uFlip;
         float ws = k == 1 ? 1.3 : (k == 2 ? 1.05 : (k == 5 ? 0.8 : 1.0));   // blue = largest central lens
         if (k >= 3) ws *= 0.85;
+        if (k == 1) ws *= mix(1.0, 0.8, uListen);           // listening: blue lens slightly smaller
         if (k == 0) ws *= 0.7;                              // green: thin sliver (edge-on cyan back to 1.0x)
         // per-sheet X/Y/Z rates (deg/s), AE: time*30 / time*45 / -time*30 / -time*45
         float3 rate = k == 0 ? float3(30.0, -45.0, 30.0) : (k == 1 ? float3(-45.0, 30.0, -30.0) : (k == 2 ? float3(45.0, 30.0, -45.0)
@@ -138,7 +141,7 @@ half4 main(float2 fc){
         float3x3 Ri = float3x3(R[0][0],R[1][0],R[2][0], R[0][1],R[1][1],R[2][1], R[0][2],R[1][2],R[2][2]);
         // idle breathing: wiggle(0.2, 10/15) on twist and bend
         float br = sin(6.2832*0.2*t + fk*2.1), br2 = sin(6.2832*0.2*t + fk*1.3 + 1.0);
-        float twist = (1.4 + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1;   // wiggle(0.2, ~15 deg)
+        float twist = (1.4 + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1 * (1.0 - 0.5 * uListen);   // listening: less twist -> petals   // wiggle(0.2, ~15 deg)
         float bend = mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         if (k == 1) offW += float3(0.0, 0.0, 0.22 * q1);   // blue sits ~0.1R toward the camera, mostly in front of red
@@ -156,7 +159,7 @@ half4 main(float2 fc){
             if (tt > length(o) + 1.5) break;
         }
         half4 col = half4(pow(sheetColor(k).rgb, half3(2.2)), 1);
-        col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uProc));   // desaturate to grey-white
+        col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
         // analytic AA: near-miss within ~1 px still contributes with fractional coverage
         if (!hit && minD < pxW && uPass < 0.5 && uProc < 0.01) { hit = true; tt = nearT; aaK = 1.0 - minD / pxW; }
         if (hit) {
@@ -197,12 +200,14 @@ half4 main(float2 fc){
                 if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
                 bri *= 1.0 + 2.5 * q1 * pow(sideS, 4.0) * exp(-(r/0.45)*(r/0.45));   // whole-sheet brightening when edge-on
                 a *= aaK;
+                if (k == 1) a *= mix(1.0, 0.8 / 0.9, uListen);
+                bri *= 1.0 + 0.25 * uListen;
                 if (k == 2) { bri *= mix(0.8, 1.0, uProc); a *= mix(0.7 / 0.9, 1.0, uProc); }   // red: darker, alpha 0.7
                 bri *= mix(1.0, mix(1.0, 0.5, smoothstep(0.6, 0.9, sideS) * (1.0 - wf)), q1);   // edge-on sheets behind centre x0.5
                 bri *= 1.0 + 0.8 * q1 * exp(-(r/0.5)*(r/0.5));                                   // internal brightness gradient
                 bri *= mix(1.0, mix(1.0, 0.7, smoothstep(0.7, 1.0, abs(uv.y))), q1);           // darker toward sheet boundaries
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
-                float wm = 0.6 * q1 * pow(sideS, 4.0) * exp(-(r/0.28)*(r/0.28));
+                float wm = (1.0 - 0.6 * uListen) * 0.6 * q1 * pow(sideS, 4.0) * exp(-(r/0.28)*(r/0.28));
                 col.rgb = mix(col.rgb, half3(1.0), half(wm));
                 half lc = dot(col.rgb, half3(0.2126, 0.7152, 0.0722));
                 col.rgb = max(mix(half3(lc), col.rgb, half(mix(1.0, 1.0/1.3, wm))), half3(0));
@@ -249,6 +254,7 @@ internal data class OrbParams(
     val sideK: Float = 1f, val shell: Float = 1f,
     val proc: Float = 0f, val orbit: Float = 0f, val tangle: Float = 0f,
     val move: Float = 0f, val ring: Float = 0.4f, val gather: Float = 0f, val flash: Float = 0f,
+    val grey: Float = -1f, val listen: Float = 0f,
 )
 
 internal fun renderSheetStills(
@@ -314,6 +320,8 @@ internal fun renderSheetStills(
             b.uniform("uTangle", prm.tangle)
             b.uniform("uBlend", (System.getenv("BLEND") ?: "0").toFloat())
             b.uniform("uLayer", layer)
+            b.uniform("uGrey", if (prm.grey >= 0f) prm.grey else prm.proc)
+            b.uniform("uListen", prm.listen)
             val surf = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
             surf.canvas.clear(if (layer > 0f) Color.TRANSPARENT else Color.BLACK)
             surf.canvas.drawPaint(Paint().apply { this.shader = b.makeShader() })
@@ -459,10 +467,11 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
     data class Target(val speed: Float, val flip: Float, val scale: Float, val core: Float)
     val tg = mapOf(
         "Appear" to Target(1.0f, 1.0f, 1.0f, 1.0f), "Idle" to Target(1.0f, 1.0f, 1.0f, 1.0f),
-        "Listening" to Target(1.3f, 1.3f, 1.0f, 1.0f), "Processing" to Target(1.0f, 1.0f, 1.0f, 1.0f),
+        "Listening" to Target(1.3f, 1.3f, 1.12f, 1.2f), "Processing" to Target(1.0f, 1.0f, 1.0f, 1.0f),
         "Result" to Target(0.8f, 0.8f, 1.0f, 1.1f), "Disappear" to Target(1.0f, 1.0f, 0.0f, 0.0f),
     )
     val starts = SheetDemoStates.runningFold(0.0) { a, b -> a + b.second }
+    var listenK = 0f
     var sideK = 1.25f; var speed = 1f; var flip = 1f; var scale = 0.0f; var core = 0f; var spinT = 0f; var orbit = 0f
     val total = starts.last()
     val dt = (1.0 / fps).toFloat()
@@ -509,8 +518,9 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
         var dScale = 0f; var dCore = 0f; var fade = 1f; var tangle = 0f
         when (name) {
             "Appear" -> {   // VJshi: dot -> full orb in ~0.6 s with a small overshoot, then settle by ~0.9 s
-                val e = smoothstepF(0f, 0.6f, tE); val ov = 0.06f * kotlin.math.sin(Math.PI.toFloat() * smoothstepF(0.4f, 0.9f, tE))
-                scale = 0.08f + 0.92f * e + ov; tangle = 1f - e; fade = smoothstepF(0f, 0.15f, tE); core = 0.6f + 0.4f * e }
+                // round 31: ~0.3 at 0.35 s, 1.0 at 0.85 s; core tied to size so the first frames are coloured, not a white blob
+                val e = smoothstepF(0.05f, 0.85f, tE)
+                scale = 0.06f + 0.94f * e; tangle = 1f - e; fade = smoothstepF(0f, 0.1f, tE); core = e * e }
             "Result" -> {
                 // reverse morph (1.0 s), then white flash 1.6 -> settle and spring bounce to ~1.08
                 // flash at the smallest (gathered) moment, then bounce as the orb regrows
@@ -523,10 +533,11 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
             }
             "Disappear" -> {
                 // VJshi: shrink to a small bright dot over ~0.6 s, dot fades out by ~0.85 s
-                val e = smoothstepF(0f, 0.6f, tE)
-                dScale = (1f - 0.9f * e) - scale
-                dCore = 0.6f * e
-                fade = 1f - smoothstepF(0.6f, 0.85f, tE)
+                // round 31: settle to a full small coloured ball, main shrink only in the last ~0.25 s
+                val s1 = 1f - 0.4f * smoothstepF(0f, 0.5f, tE)
+                val s2 = 1f - 0.9f * smoothstepF(0.65f, 0.9f, tE)
+                dScale = s1 * s2 - scale
+                fade = 1f - smoothstepF(0.85f, 0.97f, tE)
             }
         }
         val flash = if (name == "Result") 1.6f * kotlin.math.exp(-((tE - 0.4f) / 0.09f).let { it * it }) else 0f
@@ -536,7 +547,11 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
         val shell = if (name == "Processing") 1f - move
             else if (name == "Result") smoothstepF(0.6f, 1.0f, regrow)
             else if (name == "Disappear") fade * (1f - smoothstepF(0f, 0.6f, tE)) else fade
-        OrbParams(spinT, flip, (scale + dScale) * (1f + voice), (core + dCore) * (1f + voice), fade, sideOut, shell, proc, orbit, tangle, move, ring, gather, flash)
+        // listening look eases in/out with the same 0.35 s constant
+        listenK += ((if (name == "Listening") 1f else 0f) - listenK) * ease
+        // Result: drops recover their colour right after the gather flash instead of regrowing as grey silhouettes
+        val grey = if (name == "Result") (if (tE < 0.4f) proc else proc * (1f - smoothstepF(0.4f, 0.55f, tE))) else -1f
+        OrbParams(spinT, flip, (scale + dScale) * (1f + voice), (core + dCore) * (1f + voice), fade, sideOut, shell, proc, orbit, tangle, move, ring, gather, flash, grey, listenK)
     })
     Files.writeString(outDir.resolve("labels.txt"), labels.toString())
 }
