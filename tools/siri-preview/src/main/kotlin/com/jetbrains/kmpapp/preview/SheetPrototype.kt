@@ -85,14 +85,14 @@ half4 sheetColor(int k){
 
 half4 main(float2 fc){
     float2 pS = (fc - 0.5*uSize) / (0.45*uSize.x);
-    float2 p = pS / (uScale * 0.8);   // sheets kept within ~0.85R   // sheets at 0.9 stay inside the glass   // ribbons fill the glass
+    float2 p = pS / (uScale * mix(0.8, 0.9, uProc));   // sheets kept within ~0.85R   // sheets at 0.9 stay inside the glass   // ribbons fill the glass
     p.y = -p.y;
     float3 ro = float3(0, 0, 5.85);                  // camera 2700/461
     float3 rd = normalize(float3(p * (1.0/5.85) * 5.85 / 5.85, -1.0));
     rd = normalize(float3(p / 5.85, -1.0));
     half3 acc = half3(0); half accA = 0.0;
     float r = length(pS);
-    float radial = 1.0 - smoothstep(0.78, 0.88, r);
+    float radial = 1.0 - smoothstep(mix(0.78, 0.80, uProc), mix(0.88, 0.97, uProc), r);
     float q1 = 1.0 - uProc;
     float starBoost = 1.0 + 3.0 * q1 * uSideK * exp(-(r/0.2)*(r/0.2));
     float dd6[6]; half4 cc6[6];
@@ -139,7 +139,7 @@ half4 main(float2 fc){
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
-        float pxW = 1.0 / (0.45 * uSize.x * uScale * 0.8 * sc) * 1.2;   // ~1 px in sheet units
+        float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sc) * 1.2;   // ~1 px in sheet units
         float3 o = Ri * ((ro - offW) / sc); float3 d = Ri * rd;
         float tt = length(o) - 1.5; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0); float nearT = 0.0; float aaK = 1.0;
         for (int i = 0; i < 128; i++) {
@@ -153,7 +153,7 @@ half4 main(float2 fc){
         half4 col = half4(pow(sheetColor(k).rgb, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uProc));   // desaturate to grey-white
         // analytic AA: near-miss within ~1 px still contributes with fractional coverage
-        if (!hit && minD < pxW && uPass < 0.5) { hit = true; tt = nearT; aaK = 1.0 - minD / pxW; }
+        if (!hit && minD < pxW && uPass < 0.5 && uProc < 0.01) { hit = true; tt = nearT; aaK = 1.0 - minD / pxW; }
         if (hit) {
             float3 pos = o + d*tt; float2 tmp;
             float e = 0.0012;
