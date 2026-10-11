@@ -67,7 +67,9 @@ fun main(args: Array<String>) {
         val outIdx = args.indexOf("--out")
         renderSheetStills(
             java.nio.file.Paths.get(if (outIdx >= 0) args[outIdx + 1] else "/tmp/sheet"),
-            args[sheetIdx + 1].toInt(), 1.0, 12.0,
+            args[sheetIdx + 1].toInt(),
+            (System.getenv("FPS") ?: "1").toDouble(),
+            (System.getenv("SECONDS") ?: "12").toDouble(),
         )
         return
     }
