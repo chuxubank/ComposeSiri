@@ -129,7 +129,7 @@ half4 main(float2 fc){
         if (k >= 3) ws *= 0.85;
         if (k == 0) ws *= 0.7;                              // green: thin sliver (edge-on cyan back to 1.0x)
         // idle: RGB each ~1/3 area (blue shrinks, red/green grow); extras stay smaller
-        float wsI = k == 0 ? 0.85 : (k == 1 ? 0.62 : (k == 2 ? 1.95 : (k == 3 ? 0.55 : (k == 4 ? 1.75 : (k == 5 ? 0.75 : ws)))));   // r38: tuned to measured share   // r37: blue area -20%+ (tuned by measured RGB share), green larger
+        float wsI = k == 0 ? 0.5 : (k == 1 ? 0.62 : (k == 2 ? 1.95 : (k == 3 ? 0.55 : (k == 4 ? 1.75 : (k == 5 ? 0.5 : ws)))));   // r38: tuned to measured share   // r37: blue area -20%+ (tuned by measured RGB share), green larger
         ws = mix(ws, wsI, uIdle);
         ws *= (k == 1) ? mix(1.0, 0.7, uListen) : mix(1.0, 1.6, uListen);   // listening: petals x1.6, blue lens 0.7x
         // per-sheet X/Y/Z rates (deg/s), AE: time*30 / time*45 / -time*30 / -time*45
@@ -175,11 +175,11 @@ half4 main(float2 fc){
             float3 ax = normalize(A + 0.2 * float3(cos(fk*1.047), 0.0, sin(fk*1.047)));
             float tI = uSpinT / 0.6;   // spinT runs at the idle speed 0.6 -> real seconds
             float wD = k == 0 ? 14.0 : (k == 1 ? 11.0 : (k == 2 ? 13.0 : (k == 5 ? 12.0 : 0.0)));
-            float th0 = k == 0 ? 0.4 : (k == 1 ? 0.0 : (k == 2 ? 1.2 : (k == 5 ? 3.6 : 0.0)));
+            float th0 = k == 0 ? 0.0 : (k == 1 ? 2.356 : (k == 2 ? 3.1416 : 0.0));   // r39: phases so >=4 edge-on rims cross the centre
             float th = th0 + wD * (PI/180.0) * tI;
-            if (k == 3 || k == 4) th = 0.2 * sin(0.3 * tI + fk);   // held near edge-on (base pose below), <= 3.5 deg/s
+            if (k == 3 || k == 4 || k == 5) th = 0.2 * sin(0.3 * tI + fk);   // held near edge-on (base pose below), <= 3.5 deg/s
             float gam = k == 0 ? 0.2 : (k == 1 ? 1.3 : (k == 2 ? 2.4 : (k == 3 ? 0.75 : (k == 4 ? 1.85 : 2.95))));
-            float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
+            float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
             float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
             float3 c0 = normalize(Rm[0]); float3 c1 = normalize(Rm[1] - dot(Rm[1], c0) * c0); float3 c2 = cross(c0, c1);
             R = float3x3(c0, c1, c2);
@@ -208,7 +208,8 @@ half4 main(float2 fc){
         half3 baseC = sheetColor(k).rgb;
         if (k == 0) baseC = mix(baseC, half3(0.315, 0.72, 0.666), half(uIdle));   // r38: green +15 deg toward cyan, sat -25%
         if (k == 5) baseC = mix(baseC, half3(0.09, 0.32, 0.30), half(uIdle));
-        if (k == 2) baseC = mix(baseC, half3(0.88, 0.25, 0.36), half(uIdle));     // r38: warm pink-red, not deep red
+        if (k == 2) baseC = mix(baseC, half3(1.0, 0.176, 0.333), half(uIdle));     // r39: #FF2D55     // r38: warm pink-red, not deep red
+        if (k == 1) baseC = mix(baseC, half3(0.184, 0.42, 1.0), half(uIdle));     // r39: #2F6BFF
         if (k == 4) baseC = mix(baseC, half3(0.62, 0.17, 0.25), half(uIdle));
         half4 col = half4(pow(baseC, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
@@ -256,16 +257,16 @@ half4 main(float2 fc){
                 a = mix(a, 0.9 * eo, uProc);
                 // depth layer split: world z of the hit (camera at +z)
                 float zw = (R * (pos * sc)).z + offW.z;
-                float wf = smoothstep(-mix(0.08, 0.45, uIdle), mix(0.08, 0.45, uIdle), zw);   // r38 idle: no hard radial cut at z=0 (fan-blade stripes)
+                float wf = smoothstep(mix(-0.08, -0.75, uIdle), mix(0.08, -0.35, uIdle), zw);   // r39 idle: only the far back gets depth blur, wide transition (no radial stripes)   // r38 idle: no hard radial cut at z=0 (fan-blade stripes)
                 if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
                 float rS = r / max(uScale, 0.05);   // radius relative to orb size (small appear orb is not all 'centre')
                 float edgeOnly = mix(1.0, smoothstep(0.45, 0.95, abs(uv.y)), uRes);
                 float bR = mix(0.45, 0.12, uIdle);
                 bri *= 1.0 + mix(2.5, 4.6, uIdle) * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/bR)*(rS/bR));   // idle: tighter star from side-on edges
-                float whiteR = 1.0 - smoothstep(0.2, 0.45, rS);   // r38: full to 0.2R, gone by 0.45R
-                float wE6 = mix(0.06, 0.02, smoothstep(0.0, 0.45, rS));
-                float wPx = pxW / max(2.0 * sheetHalfW(pos, ws), 1e-4);   // 1.5 px in v units
-                float edge6 = 1.0 - smoothstep(0.0, max(wE6, wPx), v);
+                float whiteR = 1.0 - smoothstep(0.3, 0.65, rS);   // r39: full to 0.3R, gone by 0.65R
+                float wPxN = pxW / max(2.0 * sheetHalfW(pos, ws), 1e-4);   // 1.5 px in v units
+                float wE6 = mix(0.06, wPxN / 3.0, smoothstep(0.0, 0.65, rS));   // r39: 6% at centre -> 0.5 px needle at 0.65R
+                float edge6 = 1.0 - smoothstep(0.0, max(wE6, wPxN / 3.0), v);
                 float s4 = pow(clamp(sideS, 0.0, 1.0), 4.0);
                 bri *= mix(1.0, (1.0 + 0.4 * (1.0 - v)) * (1.0 + edge6 * mix(0.5, 0.6 + 2.4 * s4, whiteR)), uIdle);
                 a *= aaK * uBodyA;
@@ -285,7 +286,7 @@ half4 main(float2 fc){
                 // idle silk: face-on ~0.38, side-on rim ~0.95; fade inward from bright edge; outer melts to black
                 float aOrient = mix(0.35, 1.0, pow(clamp(sideS, 0.0, 1.0), 0.85));
                 float aInward = mix(1.0, 0.22, pow(v, 0.6));
-                float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / pxW, 0.0, 1.0);   // r37 idle: edge feather ~1.5 px
+                float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;
                 a = mix(a, aSilk, uIdle);
                 bri = min(bri, mix(1e3, 1.1, uRes));   // result: no fully white sheet bodies
@@ -481,7 +482,7 @@ internal fun renderSheetStills(
             Triple(radius * mixF(0.036f, 0.013f, id), radius * mixF(0.021f, 0.0055f, id), 2),
             Triple(radius * mixF(0.015f, 0.007f, id), radius * mixF(0.006f, 0.0028f, id), 4),
         )) {
-          val total = mixF(1.3f, 0.28f, id) * 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
+          val total = mixF(1.3f, 0.65f, id)   /* r39: HDR peak ~2.0 */ * 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
           var left = total
           while (left > 0.001f) {
             val a = left.coerceAtMost(1f); left -= a
@@ -497,7 +498,7 @@ internal fun renderSheetStills(
             val g = mixF(0.15f, 0.04f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
             if (g > 0.001f) {
                 // radial gradient instead of a mask-blurred circle (the blur produced a faint square box at small sizes)
-                val gs = (if (prm.coreScale >= 0f) prm.coreScale else 1f) * radius * mixF(0.5f, 0.12f, id)   // r37: white glow 12% R
+                val gs = (if (prm.coreScale >= 0f) prm.coreScale else 1f) * radius * mixF(0.5f, 0.15f, id)   // r39: soft glow 0.15R
                 val gb = RuntimeShaderBuilder(glowFx)
                 gb.uniform("uC", cx, cx); gb.uniform("uR", gs); gb.uniform("uG", g)
                 c.drawPaint(Paint().apply { shader = gb.makeShader(); blendMode = BlendMode.PLUS })
