@@ -220,7 +220,7 @@ half4 main(float2 fc){
         float twist = (mix(1.4, 1.75, uIdle) + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1 * (1.0 - 0.5 * uListen);   // idle: more ribbon folds
         float bend = (1.0 - 0.6 * uListen) * mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
-        bend = mix(bend, (k == 3 || k == 5 || k == 6) ? 0.15 + 0.025 * (fk - 3.0) / 1.5 : 0.06 + 0.008 * fk, uIdle);   // r46: bow 0.06..0.1 // r65: blades bow 0.15-0.2
+        bend = mix(bend, (k == 3 ? 0.2 : (k == 5 ? -0.225 : (k == 6 ? -0.25 : 0.06 + 0.008 * fk))), uIdle);   // r46: bow 0.06..0.1 // r65: blades bow 0.15-0.2 // r70: blades bow 0.2-0.25, signs chosen so all kept tips swing the same rotational way
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
         ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 0.94 : k == 0 ? 0.78 : (k == 1 ? 0.975 : (k == 2 ? 0.94 : (k == 3 ? 0.94 : (k == 4 ? 0.8125 : 0.94))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R // r67: big blue 0.78R // r69: blades k3/k5/k6 half-length 0.75R
         offW += uIdle * (k == 7 ? 0.05 : k == 6 ? 0.05 : k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R // r51e
