@@ -333,7 +333,7 @@ half4 main(float2 fc){
                 float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
                 a = mix(a, aSilk, uIdle);
-                float corePx = abs(uv.y) * sheetHalfW(pos, ws) * abs(nW.z) / max(pxW / 1.5, 1e-6); float coreK = smoothstep(0.85, 0.9, sideS) * (1.0 - smoothstep(1.0, 1.5, corePx)); if (uBlade > 0.5) { a = coreK; bri = 1.5; }   // r56: blade pass keeps only the projected spine of sheets with side > 0.85, <= 3 px wide
+                float corePx = abs(uv.y) * sheetHalfW(pos, ws) * abs(nW.z) / max(pxW / 1.5, 1e-6); float uAx = abs(2.0 * uv.x - 1.0); float coreHW = mix(2.0, 0.75, uAx); float coreK = smoothstep(0.75, 0.9, sideS) * (1.0 - smoothstep(coreHW - 0.5, coreHW + 0.25, corePx)); if (uBlade > 0.5) { a = coreK; bri = 1.5 * mix(1.3, 0.8, uAx); }   // r56: blade pass keeps only the projected spine of sheets with side > 0.85, <= 3 px wide // r57: soft side fade 0.75-0.9; width 4px at centre -> 1.5px at tips, brighter at centre
                 bri = min(bri, mix(1e3, 1.1, uRes));   // result: no fully white sheet bodies
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
                 float wR = mix(0.28, 0.12, uIdle);   // r37: white star radius 12% R
@@ -424,8 +424,8 @@ internal fun renderSheetStills(
         }
     """)
     val glowFx = RuntimeEffect.makeForShader("""
-        uniform float2 uC; uniform float uR; uniform float uG;
-        half4 main(float2 c) { float x = length(c - uC) / uR; return half4(half3(uG * exp(-x * x * 9.0)), 1); }
+        uniform float2 uC; uniform float uR; uniform float uG; uniform float uE;   // r57: falloff exponent
+        half4 main(float2 c) { float x = length(c - uC) / uR; return half4(half3(uG * exp(-x * x * uE)), 1); }
     """)
     val spillFx = RuntimeEffect.makeForShader("""
         uniform shader img; uniform float2 uSize; uniform float uK; uniform float uSc; uniform float uFall;
@@ -556,12 +556,12 @@ internal fun renderSheetStills(
         }
         // Wide soft glow ~0.5 R, strength ~0.35, fast falloff.
         run {
-            val g = mixF(0.15f, 0.65f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))   // r56: centre soft glow stronger (radius stays 0.16R) for ~4% white star
+            val g = mixF(0.15f, 1.0f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))   // r56: centre soft glow stronger (radius stays 0.16R) for ~4% white star // r57: idle strength 1.0
             if (g > 0.001f) {
                 // radial gradient instead of a mask-blurred circle (the blur produced a faint square box at small sizes)
                 val gs = (if (prm.coreScale >= 0f) prm.coreScale else 1f) * radius * mixF(0.5f, 0.16f, id)   // r55 idle: soft glow 0.16R
                 val gb = RuntimeShaderBuilder(glowFx)
-                gb.uniform("uC", cx, cx); gb.uniform("uR", gs); gb.uniform("uG", g)
+                gb.uniform("uC", cx, cx); gb.uniform("uR", gs); gb.uniform("uG", g); gb.uniform("uE", mixF(9f, 3f, id))   // r57 idle: slow falloff exp(-3x^2)
                 c.drawPaint(Paint().apply { shader = gb.makeShader(); blendMode = BlendMode.PLUS })
             }
         }
