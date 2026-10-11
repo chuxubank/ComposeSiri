@@ -46,7 +46,9 @@ float3x3 rotZ(float a){ float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0,
 float profile(float u){
     float m = sin(clamp(u,0.0,1.0)*PI);
     float oval = sqrt(max(1.0 - (2.0*u-1.0)*(2.0*u-1.0), 0.0));
-    return mix(pow(m, 0.75) * (0.85 + 0.15*u), pow(oval, 0.8) * (0.75 + 0.5*u) * 0.9, uProc);
+    // drop: round head, thin tail: sin(pi t)^0.6 * (1 - 0.6 t)
+    float drop = pow(m, 0.6) * (1.0 - 0.6*u) * 1.3;
+    return mix(m * (0.85 + 0.15*u), drop, uProc);   // ribbons: pointed tips
 }
 
 // signed-ish distance to sheet k in its local frame; also returns (u, v) in uv
@@ -72,12 +74,12 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
 
 half4 sheetColor(int k){
     // 4 main colours + 2 dimmer duplicates
-    if (k == 0) return half4(0.16, 0.72, 0.58, 1);    // green-teal #29B894 (less fluorescent)
-    if (k == 1) return half4(0.039, 0.518, 1.0, 1);   // blue #0A84FF
-    if (k == 2) return half4(0.86, 0.25, 0.80, 1);    // pink-purple #DB40CC
-    if (k == 3) return half4(1.0, 0.70, 0.13, 1);     // orange-yellow #FFB321
-    if (k == 4) return half4(0.039, 0.518, 1.0, 1) * half4(0.6, 0.6, 0.6, 1);
-    return half4(0.16, 0.72, 0.58, 1) * half4(0.6, 0.6, 0.6, 1);
+    if (k == 0) return half4(0.18, 0.72, 0.525, 1);   // green #2EB886
+    if (k == 1) return half4(0.118, 0.42, 1.0, 1);    // blue #1E6BFF
+    if (k == 2) return half4(0.878, 0.188, 0.235, 1); // red #E0303C
+    if (k == 3) return half4(0.235, 0.784, 0.94, 1);  // cyan #3CC8F0
+    if (k == 4) return half4(0.50, 0.10, 0.13, 1);    // darker red
+    return half4(0.07, 0.24, 0.62, 1);                // darker blue
 }
 
 half4 main(float2 fc){
@@ -122,14 +124,14 @@ half4 main(float2 fc){
         ang = tgt + dlt * (1.0 - uProc);
         float dsz = k == 0 ? 0.7 : (k == 1 ? 0.85 : (k == 2 ? 1.0 : (k == 3 ? 1.0 : (k == 4 ? 1.15 : 1.3))));
         float sc = mix(1.0, 0.133 * dsz, uProc);   // x1.4 longer   // staggered drop sizes
-        float3 offW = uRing * uMove * float3(cos(slot), sin(slot), 0.0);
+        float3 offW = max(uRing * uMove, 0.08 * uProc) * float3(cos(slot), sin(slot), 0.0);   // keep ~0.08R apart when gathered
         float rimMul = k >= 4 ? 0.0 : 0.5;
         float3x3 R = rotZ(ang.z) * rotY(ang.y) * rotX(ang.x);
         float3x3 Ri = float3x3(R[0][0],R[1][0],R[2][0], R[0][1],R[1][1],R[2][1], R[0][2],R[1][2],R[2][2]);
         // idle breathing: wiggle(0.2, 10/15) on twist and bend
         float br = sin(6.2832*0.2*t + fk*2.1), br2 = sin(6.2832*0.2*t + fk*1.3 + 1.0);
         float twist = (1.4 + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1;   // wiggle(0.2, ~15 deg)
-        float bend = mix(0.35 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.08 + 0.2*br2 + 0.9*uTangle, 0.15, uProc);   // keep ~15% bend: petal/crescent
+        float bend = mix(0.35 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.08 + 0.2*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         float3 o = Ri * ((ro - offW) / sc); float3 d = Ri * rd;
         float tt = length(o) - 1.5; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0);
@@ -169,11 +171,11 @@ half4 main(float2 fc){
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
                 float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.8 * (0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 3.0 * uSideK * uSideK * pow(1.0 - ndv, 2.0) * exp(-(r/0.20)*(r/0.20)))) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
-                float a = mix(0.95, 0.4, v) * (1.0 - smoothstep(0.85, 1.0, v)) * (0.6 + 0.4*centre) * fog;
+                float a = 0.9 * (1.0 - smoothstep(0.94, 1.0, abs(uv.y))) * (0.75 + 0.25*centre) * fog;   // solid body, ~3% feather
                 // solid hard-edged oval with a slight soft edge
                 // feathered white disc -> soft oval when flat
                 float eo = 1.0 - smoothstep(0.93, 1.0, abs(uv.y));   // nearly hard edge
-                bri = mix(bri, 0.75, uProc) * (1.0 - 0.6 * uGather);   // grey-white, below the glow threshold when overlapping
+                bri = mix(bri, mix(0.5, 0.75, uMove), uProc);   // 0.5 while shrinking in place / gathered, below the glow threshold
                 a = mix(a, 0.9 * eo, uProc);
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (uBlend > 0.5) {
@@ -277,7 +279,6 @@ internal fun renderSheetStills(
             return surf.makeImageSnapshot()
         }
         val bodyImg = pass(0f)
-        val rimImg = pass(1f)
         val radius = size * 0.45f
         val cx = size / 2f
         fun f16() = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
@@ -287,10 +288,9 @@ internal fun renderSheetStills(
         val c = scene.canvas
         c.clear(Color.BLACK)
         c.drawImage(bodyImg, 0f, 0f, Paint().apply {
-            imageFilter = ImageFilter.makeBlur(radius * 0.06f * (1f - prm.proc) + 0.6f, radius * 0.06f * (1f - prm.proc) + 0.6f, FilterTileMode.DECAL)
+            imageFilter = ImageFilter.makeBlur(radius * 0.015f * (1f - prm.proc) + 0.6f, radius * 0.015f * (1f - prm.proc) + 0.6f, FilterTileMode.DECAL)
             blendMode = BlendMode.PLUS
         })
-        c.drawImage(rimImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })
         // White spill along sheets near the centre (~30%).
         c.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (0.8f * 77 * prm.sideK * prm.sideK * (1f - prm.move)).toInt().coerceIn(0, 255) })
         c.drawImage(bodyImg, 0f, 0f, Paint().apply {
@@ -305,9 +305,9 @@ internal fun renderSheetStills(
         c.restore()
         // HDR core (peak ~4): additive passes, halo ~15% radius.
         for ((r, sig, reps) in listOf(
-            Triple(radius * 0.11f, radius * 0.08f, 1),
-            Triple(radius * 0.06f, radius * 0.035f, 2),
-            Triple(radius * 0.025f, radius * 0.01f, 4),
+            Triple(radius * 0.077f, radius * 0.056f, 1),
+            Triple(radius * 0.042f, radius * 0.025f, 2),
+            Triple(radius * 0.018f, radius * 0.007f, 4),
         )) {
           val total = 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
           var left = total
@@ -325,10 +325,10 @@ internal fun renderSheetStills(
             var left = prm.flash * 2.5f
             while (left > 0.001f) {
                 val a = left.coerceAtMost(1f); left -= a
-                c.drawCircle(cx, cx, radius * 0.05f, Paint().apply {
+                c.drawCircle(cx, cx, radius * 0.035f, Paint().apply {
                     color = ((a * 255).toInt() shl 24) or 0xFFFFFF
                     blendMode = BlendMode.PLUS
-                    maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.025f)
+                    maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.018f)
                 })
             }
         }
@@ -358,43 +358,28 @@ internal fun renderSheetStills(
         val fc = fin.canvas
         // Shell glow after tonemap: 30%, ring 0.85..1.0 only.
         // Interior base #2D2C32, feathered edge; outside stays black.
-        val discA = (0x59 + (0xD9 - 0x59) * prm.move) * prm.shell.coerceIn(0f, 1f)   // 85% in processing
-        val discR = radius * 0.96f + (1.7f * prm.ring * 0.9f * radius - radius * 0.96f) * prm.move   // follows ring at 1.7x
-        val dc = { a: Int, b: Int -> (a + (b - a) * prm.move).toInt() }
-        val discCol = (dc(0x2D, 0x1C) shl 16) or (dc(0x2C, 0x1C) shl 8) or dc(0x32, 0x1F)
-        fc.drawCircle(cx, cx, discR, Paint().apply {
-            color = (discA.toInt().coerceIn(0, 255) shl 24) or discCol
+        // Idle glass: very faint dark base + ~8% wide soft edge glow at ~10%. No crisp ring.
+        val sh = prm.shell.coerceIn(0f, 1f)
+        fc.drawCircle(cx, cx, radius * 0.97f, Paint().apply {
+            color = ((0x30 * sh).toInt() shl 24) or 0x2D2C32
             blendMode = BlendMode.PLUS
-            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.012f)   // feather < 3% R
+            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.02f)
         })
-        fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (153 * (prm.shell * (1f - prm.move)).coerceIn(0f, 1f)).toInt() })
-        fc.drawImage(bodyImg, 0f, 0f, Paint().apply {
-            imageFilter = ImageFilter.makeBlur(radius * 0.3f, radius * 0.3f, FilterTileMode.DECAL)
-            // linear body is dark after a 30% blur: x3 gain, sRGB-ish lift
-            colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
-                3f, 0f, 0f, 0f, 0f, 0f, 3f, 0f, 0f, 0f, 0f, 0f, 3f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
-        })
-        fc.drawCircle(cx, cx, radius * 0.875f, Paint().apply {
-            blendMode = BlendMode.DST_IN
+        fc.drawCircle(cx, cx, radius * 0.96f, Paint().apply {
             mode = org.jetbrains.skia.PaintMode.STROKE
-            strokeWidth = radius * 0.25f
-            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.025f)
+            strokeWidth = radius * 0.08f
+            color = ((0x1A * sh).toInt() shl 24) or 0x6A8CC8
+            blendMode = BlendMode.PLUS
+            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.03f)
         })
-        fc.restore()
-        fc.drawCircle(cx, cx, radius, Paint().apply {
-            mode = org.jetbrains.skia.PaintMode.STROKE
-            strokeWidth = 1.6f
-            color = ((0x90 * (prm.shell * (1f - prm.move)).coerceIn(0f, 1f)).toInt() shl 24) or 0x3FA8E0
-            isAntiAlias = true
-            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, 1.5f)
-        })
-        fc.drawCircle(cx, cx, radius * 0.985f, Paint().apply {
-            mode = org.jetbrains.skia.PaintMode.STROKE
-            strokeWidth = radius * 0.02f
-            color = ((0x55 * (prm.shell * (1f - prm.move)).coerceIn(0f, 1f)).toInt() shl 24) or 0x8A4FD0
-            isAntiAlias = true
-            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.012f)
-        })
+        // Processing disc: #1C1C1F at 85%, radius 1.7x the ring; shrinks and fades with the ring (move).
+        if (prm.move > 0.01f) {
+            fc.drawCircle(cx, cx, 1.7f * prm.ring * 0.9f * radius * prm.move, Paint().apply {
+                color = ((0xD9 * prm.move).toInt().coerceIn(0, 255) shl 24) or 0x1C1C1F
+                blendMode = BlendMode.PLUS
+                maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.012f)
+            })
+        }
         val data = fin.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG)!!
         Files.write(outDir.resolve("$prefix%03d.png".format(i)), data.bytes)
     }
@@ -440,7 +425,7 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
             else -> 0f
         }
         val move = when (name) {
-            "Processing" -> smoothstepF(0.2f, 0.9f, tE)
+            "Processing" -> smoothstepF(0.1f, 0.8f, tE)
             "Result" -> 1f - smoothstepF(0f, 0.4f, tE)          // gather to the centre first
             else -> 0f
         }
@@ -472,7 +457,10 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
         val flash = if (name == "Result") 1.6f * kotlin.math.exp(-((tE - 0.4f) / 0.09f).let { it * it }) else 0f
         var sideOut = sideK
         if (name == "Processing") { val k0 = 1f - smoothstepF(0f, 0.3f, tE); sideOut = sideK * k0; core *= k0 }
-        val shell = if (name == "Disappear") fade * (1f - smoothstepF(0f, 0.6f, tE)) else fade
+        val regrow = 1f - proc
+        val shell = if (name == "Processing") 1f - move
+            else if (name == "Result") smoothstepF(0.6f, 1.0f, regrow)
+            else if (name == "Disappear") fade * (1f - smoothstepF(0f, 0.6f, tE)) else fade
         OrbParams(spinT, flip, (scale + dScale) * (1f + voice), (core + dCore) * (1f + voice), fade, sideOut, shell, proc, orbit, tangle, move, ring, gather, flash)
     })
     Files.writeString(outDir.resolve("labels.txt"), labels.toString())
