@@ -63,8 +63,25 @@ float profile(float u){
     return mix(mix(pow(m, 0.7), pow(oval, 0.8), uListen), drop, uProc);   // listening: round tips   // ribbons: full lens-shaped middle, pointed tips
 }
 
+// r42 idle geometry: lens surface x=u*L, y=v*W0*sqrt(1-u^2), z=b*(u^2-0.3), 20 deg twist about the long axis; units = orb radius R
+float sheetSdfIdle(float3 p, float b, out float2 uv){
+    float L = 0.65; float W0 = 0.3;
+    float u = clamp(p.x / L, -1.0, 1.0);
+    float3 q = float3(p.x, p.y, p.z - b * (u*u - 0.3));
+    float a = 0.1745 * u;
+    float c = cos(a), s = sin(a);
+    float2 yz = float2(c*q.y + s*q.z, -s*q.y + c*q.z);
+    float w = W0 * sqrt(max(1.0 - u*u, 0.0));
+    uv = float2(0.5 + 0.5*u, yz.x / max(w, 1e-4));
+    float dz = abs(yz.y) - 0.004;
+    float dy = abs(yz.x) - w;
+    float dx = abs(p.x) - L;
+    return max(max(dz, dy), dx);
+}
+
 // signed-ish distance to sheet k in its local frame; also returns (u, v) in uv
 float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
+    if (uIdle > 0.5) return sheetSdfIdle(p, bend, uv);   // r42 idle: parametric lens
     float L = 1.05 * (1.0 - 0.3 * uListen);   // listening: shorter petals, aspect <= 2:1              // half length (shell radii): 85% of diameter x1.5
     float u = (p.x + L) / (2.0*L);
     // bend: centreline arcs in y, centred
@@ -86,6 +103,7 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
 
 // half width (sheet units) at the point p: same parametrisation as sheetSdf
 float sheetHalfW(float3 p, float ws){
+    if (uIdle > 0.5) { float uI = clamp(p.x / 0.65, -1.0, 1.0); return 0.3 * sqrt(max(1.0 - uI*uI, 0.0)); }   // r42 idle lens half width
     float L = 1.05 * (1.0 - 0.3 * uListen);
     float u = clamp((p.x + L) / (2.0*L), 0.0, 1.0);
     return mix(profile(u), profile(0.5) * clamp(2.0 - 2.0 * abs(2.0*u - 1.0), 0.0, 1.0), uIdle) * 0.55 * ws;   // r41: same taper as sheetSdf
@@ -103,7 +121,7 @@ half4 sheetColor(int k){
 
 half4 main(float2 fc){
     float2 pS = (fc - 0.5*uSize) / (0.45*uSize.x);
-    float sizeI = mix(1.0, 1.8, uIdle);   // r38 idle: sheet radius (radial fade caps the outer edge at ~0.7R)
+    float sizeI = mix(1.0, 1.0 / 0.9, uIdle);   // r42 idle: object units = orb radius R (lens geometry is absolute)   // r38 idle: sheet radius (radial fade caps the outer edge at ~0.7R)
     float2 p = pS / (uScale * mix(0.8, 0.9, uProc) * sizeI);   // sheets kept within ~0.85R   // sheets at 0.9 stay inside the glass   // ribbons fill the glass
     p.y = -p.y;
     float3 ro = float3(0, 0, 5.85);                  // camera 2700/461
@@ -113,7 +131,7 @@ half4 main(float2 fc){
     float r = length(pS);
     float rad0 = mix(0.78, 0.80, uProc) + 0.5 * uListen;
     float rad1 = mix(0.88, 0.97, uProc) + 0.5 * uListen;
-    float radial = 1.0 - smoothstep(mix(rad0, 0.72, uIdle), mix(rad1, 0.86, uIdle), r);   // idle: melt into black before the glass rim
+    float radial = 1.0 - smoothstep(mix(rad0, 0.95, uIdle), mix(rad1, 1.0, uIdle), r);   // r42 idle: no radial opacity fade, lens shape closes the outline   // idle: melt into black before the glass rim
     float q1 = 1.0 - uProc;
     float starBoost = 1.0 + 3.0 * q1 * uSideK * exp(-(r/0.2)*(r/0.2));
     float dd6[6]; half4 cc6[6];
@@ -180,7 +198,7 @@ half4 main(float2 fc){
             if (k == 3 || k == 4 || k == 5) th = 0.2 * sin(0.3 * tI + fk);   // held near edge-on (base pose below), <= 3.5 deg/s
             float gam = k == 0 ? 0.2 : (k == 1 ? 1.3 : (k == 2 ? 2.4 : (k == 3 ? 0.75 : (k == 4 ? 1.85 : 2.95))));
             float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
-            RI = rotZ(fk * 0.5236) * RI;   // r40: fixed tilt about the view axis 0/30/60/90/120/150 deg
+            RI = rotAxis(A, 0.2618 * tI) * rotZ(fk * 0.5236) * rotX(fk * 0.5236 + 0.35);   // r42 idle: fixed per-sheet pose spread 0..150 deg, whole group turns slowly (15 deg/s)
             float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
             float3 c0 = normalize(Rm[0]); float3 c1 = normalize(Rm[1] - dot(Rm[1], c0) * c0); float3 c2 = cross(c0, c1);
             R = float3x3(c0, c1, c2);
@@ -191,7 +209,8 @@ half4 main(float2 fc){
         float twist = (mix(1.4, 1.75, uIdle) + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1 * (1.0 - 0.5 * uListen);   // idle: more ribbon folds
         float bend = (1.0 - 0.6 * uListen) * mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
-        if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.06, uIdle) * q1);   // idle: less camera bias so RGB take turns
+        bend = mix(bend, 0.15 + 0.02 * fk, uIdle); offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
+        if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
         float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sizeI * sc) * 1.5;   // AA transition ~1.5 screen px
@@ -268,7 +287,8 @@ half4 main(float2 fc){
                 float wPxN = pxW / max(2.0 * sheetHalfW(pos, ws), 1e-4);   // 1.5 px in v units
                 float wE6 = mix(0.06, wPxN / 3.0, smoothstep(0.0, 0.65, rS));   // r39: 6% at centre -> 0.5 px needle at 0.65R
                 float edge6 = 1.0 - smoothstep(0.0, max(wE6, wPxN / 3.0), v);
-                float s4 = pow(clamp(sideS, 0.0, 1.0), 4.0);
+                float sideP = mix(sideS, 1.0 - ndv, uIdle);   // r42 idle: side-on from the surface normal vs the view ray
+                float s4 = pow(clamp(sideP, 0.0, 1.0), 4.0);
                 bri *= mix(1.0, (1.0 + 0.4 * (1.0 - v)) * (1.0 + edge6 * mix(0.5, 0.6 + 2.4 * s4, whiteR)), uIdle);
                 bri *= mix(1.0, mix(0.4, 1.0, edge6 * s4), uIdle);   // r41b idle: sheet face x0.4, only side-on bright edges stay bright
                 a *= aaK * uBodyA;
@@ -286,10 +306,10 @@ half4 main(float2 fc){
                 bri *= 1.0 + mix(0.8, 0.32, uIdle) * q1 * exp(-(rS/gR)*(rS/gR));                                   // idle: less circular centre wash
                 bri *= mix(1.0, mix(1.0, 0.7, smoothstep(0.7, 1.0, abs(uv.y))), q1);           // darker toward sheet boundaries
                 // idle silk: face-on ~0.38, side-on rim ~0.95; fade inward from bright edge; outer melts to black
-                float aOrient = mix(0.5, 1.0, pow(clamp(sideS, 0.0, 1.0), 0.85));   // r40: face-on opacity 0.5
+                float aOrient = mix(0.5, 1.0, pow(clamp(sideP, 0.0, 1.0), 0.85));   // r40: face-on opacity 0.5
                 float aInward = mix(1.0, 0.22, pow(v, 0.6));
                 float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px
-                float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA * (1.0 - smoothstep(0.45, 0.7, rS));   // r41 idle: opacity full to 0.45R, smoothstep to 0 by 0.7R
+                float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
                 a = mix(a, aSilk, uIdle);
                 bri = min(bri, mix(1e3, 1.1, uRes));   // result: no fully white sheet bodies
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
@@ -549,9 +569,9 @@ internal fun renderSheetStills(
         // Ball base: deep blue #0B1020 under everything; inner rim glow (0.8..1.0 R) from blurred sheet colour.
         val sh = prm.shell.coerceIn(0f, 1f)
         fc.drawCircle(cx, cx, radius * 0.985f, Paint().apply {
-            val ir = 5
-            val ig = mixF(7f, 10f, id).toInt()
-            val ib = mixF(13f, 26f, id).toInt()   // r37 idle: #050a1a
+            val ir = mixF(5f, 3f, id).toInt()
+            val ig = mixF(7f, 5f, id).toInt()
+            val ib = mixF(13f, 12f, id).toInt()   // r42 idle: #03050c
             val ia = 255
             color = (((ia * sh).toInt().coerceIn(0, 255)) shl 24) or (ir shl 16) or (ig shl 8) or ib
             blendMode = BlendMode.PLUS
