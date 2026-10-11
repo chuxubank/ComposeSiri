@@ -241,10 +241,10 @@ half4 main(float2 fc){
         half3 baseC = sheetColor(k).rgb;
         if (k == 0) baseC = mix(baseC, half3(0.315, 0.72, 0.666), half(uIdle));   // r38: green +15 deg toward cyan, sat -25%
         if (k == 5) baseC = mix(baseC, half3(0.09, 0.32, 0.30), half(uIdle));
-        if (k == 2) baseC = mix(baseC, half3(1.0, 0.176, 0.333), half(uIdle));     // r39: #FF2D55     // r38: warm pink-red, not deep red
+        if (k == 2) baseC = mix(baseC, half3(1.0, 0.231, 0.188), half(uIdle));     // r53: #FF3B30 hue ~3 deg
         if (k == 1) baseC = mix(baseC, half3(0.184, 0.42, 1.0), half(uIdle));     // r39: #2F6BFF
         if (k == 4) baseC = mix(baseC, half3(0.62, 0.17, 0.25), half(uIdle));
-        if (uIdle > 0.5) { if (k == 3) baseC = half3(0.184, 0.42, 1.0); if (k == 4) baseC = half3(1.0, 0.176, 0.333); }   // r43d idle: second blue #2F6BFF and second red #FF2D55
+        if (uIdle > 0.5) { if (k == 3) baseC = half3(0.184, 0.42, 1.0); if (k == 4) baseC = half3(1.0, 0.231, 0.188); }   // r53: second red #FF3B30
         if (uIdle > 0.5 && k == 5) baseC = half3(0.235, 0.784, 0.94);   // r46: sixth sheet cyan #3CC8F0
         if (uIdle > 0.5 && k == 6) baseC = half3(0.184, 0.42, 1.0);   // r51e: 7th sheet blue #2F6BFF
         half4 col = half4(pow(baseC, half3(2.2)), 1);
@@ -326,7 +326,7 @@ half4 main(float2 fc){
                 bri *= 1.0 + mix(0.8, 0.32, uIdle) * q1 * exp(-(rS/gR)*(rS/gR));                                   // idle: less circular centre wash
                 bri *= mix(1.0, mix(1.0, 0.7, smoothstep(0.7, 1.0, abs(uv.y))), q1);           // darker toward sheet boundaries
                 // idle silk: face-on ~0.38, side-on rim ~0.95; fade inward from bright edge; outer melts to black
-                float aOrient = mix((k == 2 ? mix(0.5, 0.65, uIdle) : 0.5), 1.0, pow(clamp(sideP, 0.0, 1.0), 0.85));   // r40: face-on opacity 0.5 // r52: face-on red opacity 0.65
+                float aOrient = mix((k == 2 ? mix(0.5, 0.85, uIdle) : 0.5), 1.0, pow(clamp(sideP, 0.0, 1.0), 0.85));   // r53: face-on red opacity 0.85
                 float aInward = mix(mix(1.0, 0.22, pow(v, 0.6)), 1.0, uIdle);   // r51 idle: the one-sided fade made half of each lens ~invisible, so the visible shape was a half-lens cut along its straight centreline (the straight edges / hexagram outline)
                 float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
