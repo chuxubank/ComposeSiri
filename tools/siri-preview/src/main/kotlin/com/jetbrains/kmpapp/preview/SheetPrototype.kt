@@ -26,6 +26,8 @@ uniform float uPass;      // 0 = body fill, 1 = rim
 uniform float uSpinT;     // integrated spin time (s): speed scale applied on CPU
 uniform float uK0Ph;     // r72: cyan k0 roll phase (preview env K0PH)
 uniform float3 uFPh;   // r72: extra roll phase for k2, k4, k7 (env FPH2/FPH4/FPH7)
+uniform float2 uDPh;   // r74: drift phase offsets for red k2 / k4 (env DPH2/DPH4)
+uniform float uK0Z;
 uniform float uFlip;      // drift/flip amplitude scale
 uniform float uScale;     // sheet scale
 uniform float uSideK;     // per-state core factor on the side-on boost
@@ -207,6 +209,7 @@ half4 main(float2 fc){
             // r43c idle: long axis pitched 35..80 deg out of the screen plane, random azimuth (drift 3 deg/s); sheet rolls about its long axis <= 14 deg/s, phases staggered so 2-3 sheets are near edge-on (|n.v| < 0.3) at any time
             float pitI = (k == 6 || k == 7) ? 0.1745 : k == 0 ? 0.2094 : (k == 1 ? 0.1745 : (k == 2 ? 0.1745 : (k == 3 ? 0.3491 : (k == 4 ? 0.1745 : 0.3054))));   // r50: blades k3/k5 pitch 20/17.5 deg so they project long (~0.75R) // r51e k6 pitch 10
             float psiI = (k == 7 ? 1.0 : k == 6 ? 2.269 : (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 1.92 : (k == 3 ? 1.396 : (k == 4 ? 2.97 : 3.229)))))) + 1.0472 * tI;   // r71: one full turn per 6 s
+            if (k == 3 || k == 5 || k == 6) psiI += (k == 3 ? 0.0 : (k == 5 ? -2.0944 : 1.0472)) * tI;   // r74: blades spin on their own: +1 / -1 / +2 turns per 6 s (common drift is +1 turn)
             psiI += (k == 3 ? 0.1745 * sin(1.0472 * tI) : (k == 5 ? 0.1745 * sin(2.0944 * tI + 1.0) : (k == 6 ? 0.1745 * sin(3.1416 * tI + 2.0) : 0.0)));   // r72: blades kept halves at ~0/105/230 deg, each wobbles +-10 deg with 6/3/2 s periods (seamless at 6 s)
             if (k == 4) psiI = 0.6 + 0.436 * sin(1.0472 * tI);   // r68: k4 azimuth held upper-right +-25 deg, no global drift   // r51: azimuth drift 13 deg/s (was 3 deg/s; with rolls held, frames looked frozen) // r51e // r52: reds moved off the blue axes (lens axis repeats every 180 deg; 4.538/5.585 coincided with blues k3/k1) // r59: k6 axis ~60 deg from both other blades
             float rolI = (k == 7) ? (0.50 + 0.5236 * sin(1.0472 * tI + 7.0 + uFPh.z)) : (k == 6) ? (1.5708 + 0.08 * sin(1.0472 * tI + 6.0)) : (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.0 : (k == 1 ? -0.49 : (k == 2 ? 0.25 : -0.52))) + 0.5236 * sin(1.0472 * tI + fk * 1.7 + (k == 0 ? uK0Ph : (k == 2 ? uFPh.x : (k == 4 ? uFPh.y : 0.0))))) : ((k == 3 ? 1.5708 : -1.5708) + 0.08 * sin(1.0472 * tI + fk));   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6 // r50: blades held edge-on (roll 90 +-15 deg, <=5 deg/s) -> always side-on > 0.75 // r51e k6 held ~31 deg off view // r52: red k2 near face-on (~14 deg) // r59: k6 becomes the 3rd edge-on blade (was half-side; only 2 sheets had side>0.75 in all 50 frames) // r60: blade roll +-15 deg -> +-4.6 deg; the +-15 deg roll pushed side below 0.9 so core lines faded (white drop after 1 s) // r71: fill sheets roll +-30 deg per 6 s; blades keep +-4.6 deg so side stays >0.9 (no fade-out/dotted lines) // r72: cyan fill k0 rolls +-30 deg around face-on (phase +90 deg) so cyan never collapses
@@ -228,11 +231,13 @@ half4 main(float2 fc){
         bend = mix(bend, (k == 3 ? 0.2 : (k == 5 ? -0.225 : (k == 6 ? -0.25 : 0.06 + 0.008 * fk))), uIdle);   // r46: bow 0.06..0.1 // r65: blades bow 0.15-0.2 // r70: blades bow 0.2-0.25, signs chosen so all kept tips swing the same rotational way
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
         ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 0.5625 : k == 0 ? 0.875 : (k == 1 ? 0.975 : (k == 2 ? 0.94 : (k == 3 ? 0.9375 : (k == 4 ? 0.8125 : 0.75))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R // r67: big blue 0.78R // r69: blades k3/k5/k6 half-length 0.75R // r73: cyan fill k0 half-length 0.7R; blades k3/k5/k6 0.75/0.6/0.45R
-        { float tB = uSpinT / 0.6; gLB = 1.0 + 0.15 * uIdle * sin((mod(fk, 2.0) < 0.5 ? 1.0472 : 2.0944) * tB + fk * 2.3); gWB = 1.0 + 0.15 * uIdle * sin((mod(fk, 3.0) < 1.0 ? 2.0944 : 1.0472) * tB + fk * 1.1 + 0.7); bend += 0.08 * uIdle * sin((mod(fk, 2.0) < 0.5 ? 2.0944 : 1.0472) * tB + fk * 0.9 + 1.9); }   // r73: length/width breathe +-15%, bow +-0.08, 6 s / 3 s periods, seamless
+        { float tB = uSpinT / 0.6; float bl = sin((mod(fk, 2.0) < 0.5 ? 1.0472 : 2.0944) * tB + fk * 2.3); gLB = (k == 3 || k == 5 || k == 6) ? 1.0 + 0.2 * uIdle * sin((k == 5 ? 2.0944 : 1.0472) * tB + fk * 1.3) : 1.0 - uIdle * 0.075 * (1.0 + bl); gWB = 1.0 + 0.15 * uIdle * sin((mod(fk, 3.0) < 1.0 ? 2.0944 : 1.0472) * tB + fk * 1.1 + 0.7); if (k == 2) { float s2 = sin(1.0472 * tB + 3.4 + uFPh.x); gLB = 1.0 - uIdle * 0.075 * (1.0 - s2); gWB = gLB; } bend += 0.08 * uIdle * sin((mod(fk, 2.0) < 0.5 ? 2.0944 : 1.0472) * tB + fk * 0.9 + 1.9); }   // r74: sheet length breathes inward only (0..-15%); blades +-20%; k2 size peaks when its roll is most edge-on (half a period from its face-on peak); bow +-0.08
         offW += uIdle * (k == 7 ? 0.05 : k == 6 ? 0.05 : k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R // r51e
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         if (k == 2) offW += float3(0.0, 0.0, 0.25 * uIdle);   // r52: face-on red sits in front
-        if (!(k == 3 || k == 5 || k == 6)) { float oa = k == 0 ? 3.927 : (k == 1 ? -1.5708 : (k == 2 ? 2.356 : (k == 4 ? 0.3 : 3.6))); float od = k == 0 ? 0.22 : (k == 1 ? 0.17 : (k == 2 ? 0.1 : (k == 4 ? 0.2 : 0.15))); offW += uIdle * od * float3(cos(oa), sin(oa), 0.0); }   // r65: fill sheets centred off the orb centre (0.2-0.28R, spread: k0 upper-right, k1 down, k2 upper-left, k4 right, k7 left-down); blades k3/k5/k6 still cross the centre // r66: offsets 0.15-0.2R // r67: k4 to upper-right, away from big blue // r68: only big red k2 offset cut (it reached 0.93R) // r73: cyan k0 lower-left
+        if (!(k == 3 || k == 5 || k == 6)) { float oa = k == 0 ? 3.927 : (k == 1 ? -1.5708 : (k == 2 ? 2.356 : (k == 4 ? 0.3 : 3.6))); float od = k == 0 ? 0.08 : (k == 1 ? 0.09 : (k == 2 ? 0.04 : (k == 4 ? 0.12 : 0.07))); offW += uIdle * od * float3(cos(oa), sin(oa), 0.0); }   // r65: fill sheets centred off the orb centre (0.2-0.28R, spread: k0 upper-right, k1 down, k2 upper-left, k4 right, k7 left-down); blades k3/k5/k6 still cross the centre // r66: offsets 0.15-0.2R // r67: k4 to upper-right, away from big blue // r68: only big red k2 offset cut (it reached 0.93R) // r73: cyan k0 lower-left // r74: offsets cut so offset + 0.1R drift keeps the outer edge <= 0.9R
+        { float tD = uSpinT / 0.6; float wD2 = (mod(fk, 2.0) < 0.5 ? 1.0472 : 2.0944) * (mod(fk, 3.0) < 1.5 ? 1.0 : -1.0); offW += uIdle * 0.1 * float3(cos(wD2 * tD + fk * 2.7 + (k == 2 ? uDPh.x : (k == 4 ? uDPh.y : 0.0))), sin(wD2 * tD + fk * 2.7 + (k == 2 ? uDPh.x : (k == 4 ? uDPh.y : 0.0))), 0.0); }   // r74: each sheet centre drifts on a 0.1R circle, own direction, 6 s or 3 s period
+        if (k == 0) offW.z += uIdle * uK0Z;   // r74: cyan k0 pulled toward the camera so red sheets do not cover it
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
         float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sizeI * sc) * 1.5;   // AA transition ~1.5 screen px
@@ -471,7 +476,15 @@ internal fun renderSheetStills(
     """)
     val fogFx = RuntimeEffect.makeForShader("""
         uniform float2 uC; uniform float uR;
-        half4 main(float2 c) { float x = length(c - uC) / uR; if (x > 1.0) return half4(0); float a = mix(0.06, 0.12, x * x) * (1.0 - smoothstep(0.97, 1.0, x)); return half4(half3(0.30, 0.28, 0.75) * half(a), half(a)); }
+        uniform shader uImg;
+        half4 main(float2 c) { float2 d = c - uC; float x = length(d) / uR; if (x > 1.0) return half4(0);
+            float2 dn = d / max(length(d), 1e-3); float2 tg = float2(-dn.y, dn.x); half3 s = half3(0);
+            for (int i = -2; i <= 2; i++) { float an = float(i) * 0.15; s += uImg.eval(uC + uR * 0.7 * (dn * cos(an) + tg * sin(an))).rgb; }
+            half m = max(max(s.r, s.g), s.b); half3 near = mix(half3(0.30, 0.28, 0.75), s / max(m, 0.001), half(smoothstep(0.02, 0.15, m / 5.0)));
+            float aIn = mix(0.06, 0.12, x * x); float aOut = 0.2 * smoothstep(0.7, 0.85, x);
+            float a = max(aIn, aOut) * (1.0 - smoothstep(0.97, 1.0, x));
+            half3 col = mix(half3(0.30, 0.28, 0.75), near, half(smoothstep(0.6, 0.8, x)));
+            return half4(col * half(a), half(a)); }
     """)   // r64: blue-violet in-ball fog, 0.06 centre -> 0.12 edge
     val spillFx = RuntimeEffect.makeForShader("""
         uniform shader img; uniform float2 uSize; uniform float uK; uniform float uSc; uniform float uFall;
@@ -517,6 +530,8 @@ internal fun renderSheetStills(
             b.uniform("uSpinT", prm.spinT)
             b.uniform("uK0Ph", (System.getenv("K0PH") ?: "2.5").toFloat())
             b.uniform("uFPh", (System.getenv("FPH2") ?: "0").toFloat(), (System.getenv("FPH4") ?: "0").toFloat(), (System.getenv("FPH7") ?: "3.1416").toFloat())
+            b.uniform("uDPh", (System.getenv("DPH2") ?: "3.14").toFloat(), (System.getenv("DPH4") ?: "3.14").toFloat())
+            b.uniform("uK0Z", (System.getenv("K0Z") ?: "0.15").toFloat())
             b.uniform("uFlip", prm.flip)
             b.uniform("uScale", prm.scale)
             b.uniform("uSideK", prm.sideK)
@@ -687,14 +702,14 @@ internal fun renderSheetStills(
             fc.restore()
         }
         if (id > 0.01f) {   // r64: in-ball fog
-            val fgb = RuntimeShaderBuilder(fogFx); fgb.uniform("uC", cx, cx); fgb.uniform("uR", radius)
+            val fgb = RuntimeShaderBuilder(fogFx); fgb.child("uImg", bodyImg.makeShader()); fgb.uniform("uC", cx, cx); fgb.uniform("uR", radius)   // r74: fog 0.7-1.0R up to 0.2 in the nearest sheet colour (same sampling as the rim)
             fc.drawPaint(Paint().apply { shader = fgb.makeShader(); blendMode = BlendMode.PLUS }) // r64 fix: opaque layer alpha covered the scene; draw PLUS directly
         }
         // r55 idle glass: soft fresnel, upper-left red / lower-right blue, peak 0.15
         if (id > 0.01f && sh > 0.01f) {
             val fb = RuntimeShaderBuilder(fresnelFx)
             fb.child("uImg", bodyImg.makeShader())
-            fb.uniform("uC", cx, cx); fb.uniform("uR", radius); fb.uniform("uA", 0.22f * id * sh); fb.uniform("uPx", 1.5f / radius)
+            fb.uniform("uC", cx, cx); fb.uniform("uR", radius); fb.uniform("uA", 0.3f * id * sh); fb.uniform("uPx", 1.5f / radius)
             fc.drawPaint(Paint().apply { shader = fb.makeShader(); blendMode = BlendMode.PLUS })
         }
         // Result: noticeably bright glass edge
