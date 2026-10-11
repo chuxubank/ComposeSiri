@@ -65,8 +65,8 @@ float profile(float u){
 
 // r42 idle geometry: lens surface x=u*L, y=v*W0*sqrt(1-u^2), z=b*(u^2-0.3), 20 deg twist about the long axis; units = orb radius R
 float sheetSdfIdle(float3 p, float b, out float2 uv){
-    float L = 0.65; float W0 = 0.3;
-    float u = clamp(p.x / L, -1.0, 1.0);
+    float L = 0.85; float W0 = 0.4;   // r43
+    float u = clamp((p.x - L) / L, -1.0, 1.0);   // r43: lens shifted along its length so one tip sits at the centre
     float3 q = float3(p.x, p.y, p.z - b * (u*u - 0.3));
     float a = 0.1745 * u;
     float c = cos(a), s = sin(a);
@@ -75,13 +75,13 @@ float sheetSdfIdle(float3 p, float b, out float2 uv){
     uv = float2(0.5 + 0.5*u, yz.x / max(w, 1e-4));
     float dz = abs(yz.y) - 0.004;
     float dy = abs(yz.x) - w;
-    float dx = abs(p.x) - L;
+    float dx = abs(p.x - L) - L;
     return max(max(dz, dy), dx);
 }
 
 // signed-ish distance to sheet k in its local frame; also returns (u, v) in uv
 float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
-    if (uIdle > 0.5) return sheetSdfIdle(p, bend, uv);   // r42 idle: parametric lens
+    if (uIdle > 0.5) return sheetSdfIdle(p / ws, bend, uv) * ws;   // r43: per-sheet size factor ws   // r42 idle: parametric lens
     float L = 1.05 * (1.0 - 0.3 * uListen);   // listening: shorter petals, aspect <= 2:1              // half length (shell radii): 85% of diameter x1.5
     float u = (p.x + L) / (2.0*L);
     // bend: centreline arcs in y, centred
@@ -103,7 +103,7 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
 
 // half width (sheet units) at the point p: same parametrisation as sheetSdf
 float sheetHalfW(float3 p, float ws){
-    if (uIdle > 0.5) { float uI = clamp(p.x / 0.65, -1.0, 1.0); return 0.3 * sqrt(max(1.0 - uI*uI, 0.0)); }   // r42 idle lens half width
+    if (uIdle > 0.5) { float uI = clamp((p.x / ws - 0.85) / 0.85, -1.0, 1.0); return ws * 0.4 * sqrt(max(1.0 - uI*uI, 0.0)); }   // r42 idle lens half width
     float L = 1.05 * (1.0 - 0.3 * uListen);
     float u = clamp((p.x + L) / (2.0*L), 0.0, 1.0);
     return mix(profile(u), profile(0.5) * clamp(2.0 - 2.0 * abs(2.0*u - 1.0), 0.0, 1.0), uIdle) * 0.55 * ws;   // r41: same taper as sheetSdf
@@ -139,6 +139,7 @@ half4 main(float2 fc){
     for (int k = 0; k < 6; k++) {
         if (float(k) >= uCount) break;
         float fk = float(k);
+        if (uIdle > 0.5 && k == 5) continue;   // r43b idle: 5 sheets (red 2, blue 2, teal 1)
         float t = uTime;
         // AE: time*45+value / -time*30+value deg/s, counter-rotating groups; wiggle(0.2,10/15)
         float spin = (mod(fk,2.0) < 0.5 ? 45.0 : -30.0) * PI/180.0;
@@ -198,7 +199,15 @@ half4 main(float2 fc){
             if (k == 3 || k == 4 || k == 5) th = 0.2 * sin(0.3 * tI + fk);   // held near edge-on (base pose below), <= 3.5 deg/s
             float gam = k == 0 ? 0.2 : (k == 1 ? 1.3 : (k == 2 ? 2.4 : (k == 3 ? 0.75 : (k == 4 ? 1.85 : 2.95))));
             float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
-            RI = rotAxis(A, 0.2618 * tI) * rotZ(fk * 0.5236) * rotX(fk * 0.5236 + 0.35);   // r42 idle: fixed per-sheet pose spread 0..150 deg, whole group turns slowly (15 deg/s)
+            // r43c idle: long axis pitched 35..80 deg out of the screen plane, random azimuth (drift 3 deg/s); sheet rolls about its long axis <= 14 deg/s, phases staggered so 2-3 sheets are near edge-on (|n.v| < 0.3) at any time
+            float pitI = k == 0 ? 1.2217 : (k == 1 ? 0.6981 : (k == 2 ? 1.0472 : (k == 3 ? 1.3614 : 0.8727)));
+            float psiI = (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 4.538 : (k == 3 ? 1.396 : 5.585)))) + 0.0524 * tI;
+            float rolI = (k == 0 ? 0.855 : (k == 1 ? 0.017 : (k == 2 ? 2.025 : (k == 3 ? 2.269 : 2.618)))) + (k == 0 ? 12.0 : (k == 1 ? -14.0 : (k == 2 ? 10.0 : (k == 3 ? -13.0 : 11.0)))) * (PI/180.0) * tI;
+            float3 lI = float3(cos(pitI) * cos(psiI), cos(pitI) * sin(psiI), sin(pitI));
+            float3 m2I = normalize(cross(lI, float3(0.0, 0.0, 1.0)));
+            float3 m1I = cross(m2I, lI);
+            float3 nI = cos(rolI) * m1I + sin(rolI) * m2I;
+            RI = float3x3(lI, cross(nI, lI), nI);
             float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
             float3 c0 = normalize(Rm[0]); float3 c1 = normalize(Rm[1] - dot(Rm[1], c0) * c0); float3 c2 = cross(c0, c1);
             R = float3x3(c0, c1, c2);
@@ -210,6 +219,7 @@ half4 main(float2 fc){
         float bend = (1.0 - 0.6 * uListen) * mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         bend = mix(bend, 0.15 + 0.02 * fk, uIdle); offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
+        ws = mix(ws, (k == 0 ? 1.0 : (k == 1 ? 0.8 : (k == 2 ? 1.1 : (k == 3 ? 0.75 : 0.92)))), uIdle);   // r43b idle: fixed per-sheet size 0.7..1.1
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
@@ -231,6 +241,7 @@ half4 main(float2 fc){
         if (k == 2) baseC = mix(baseC, half3(1.0, 0.176, 0.333), half(uIdle));     // r39: #FF2D55     // r38: warm pink-red, not deep red
         if (k == 1) baseC = mix(baseC, half3(0.184, 0.42, 1.0), half(uIdle));     // r39: #2F6BFF
         if (k == 4) baseC = mix(baseC, half3(0.62, 0.17, 0.25), half(uIdle));
+        if (uIdle > 0.5) { if (k == 3) baseC = half3(0.184, 0.42, 1.0); if (k == 4) baseC = half3(1.0, 0.176, 0.333); }   // r43d idle: second blue #2F6BFF and second red #FF2D55
         half4 col = half4(pow(baseC, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
         // analytic AA: near-miss within ~1 px still contributes with fractional coverage
@@ -290,7 +301,7 @@ half4 main(float2 fc){
                 float sideP = mix(sideS, 1.0 - ndv, uIdle);   // r42 idle: side-on from the surface normal vs the view ray
                 float s4 = pow(clamp(sideP, 0.0, 1.0), 4.0);
                 bri *= mix(1.0, (1.0 + 0.4 * (1.0 - v)) * (1.0 + edge6 * mix(0.5, 0.6 + 2.4 * s4, whiteR)), uIdle);
-                bri *= mix(1.0, mix(0.4, 1.0, edge6 * s4), uIdle);   // r41b idle: sheet face x0.4, only side-on bright edges stay bright
+                bri *= mix(1.0, mix(0.7, 1.0, edge6 * s4), uIdle);   // r43e idle: sheet face x0.7, only side-on bright edges stay bright
                 a *= aaK * uBodyA;
                 // listening: inner edge coverage over ~1.5 px (distance to the petal edge in pixels)
                 float wE = sheetHalfW(pos, ws);
@@ -505,7 +516,7 @@ internal fun renderSheetStills(
             Triple(radius * mixF(0.036f, 0.013f, id), radius * mixF(0.021f, 0.0055f, id), 2),
             Triple(radius * mixF(0.015f, 0.007f, id), radius * mixF(0.006f, 0.0028f, id), 4),
         )) {
-          val total = mixF(1.3f, 1.1f, id)   /* r40: blown-out core */ * 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
+          val total = mixF(1.3f, 0f, id)   /* r43f idle: no circular HDR core, centre white only from crossing edges */ * 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
           var left = total
           while (left > 0.001f) {
             val a = left.coerceAtMost(1f); left -= a
