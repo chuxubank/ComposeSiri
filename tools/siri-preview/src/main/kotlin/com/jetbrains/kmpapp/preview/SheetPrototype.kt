@@ -39,13 +39,19 @@ uniform float uListen;
 uniform float uBodyA;
 uniform float uRes;       // result: white only on sheet edges     // sheet opacity multiplier (appear)    // listening: rounder petals, brighter, slightly less blue
 uniform float uLayer;     // 0 = all, 1 = front half only, 2 = behind-centre half only (depth blur)
-uniform float uIdle;      // 1 = idle look (silk, equal RGB, tight star); 0 = round-35 values
+uniform float uIdle;
+uniform float uDebug;     // 1 = colour each sheet by family (R/G/B) for identity-based area stats      // 1 = idle look (silk, equal RGB, tight star); 0 = round-35 values
 
 const float PI = 3.14159265;
 
 float3x3 rotX(float a){ float c=cos(a), s=sin(a); return float3x3(1,0,0, 0,c,-s, 0,s,c); }
 float3x3 rotY(float a){ float c=cos(a), s=sin(a); return float3x3(c,0,s, 0,1,0, -s,0,c); }
 float3x3 rotZ(float a){ float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0, 0,0,1); }
+// rotation by th about unit axis a (columns = R*e_i)
+float3x3 rotAxis(float3 a, float th){ float c=cos(th), s=sin(th), t=1.0-c;
+    return float3x3(t*a.x*a.x+c, t*a.x*a.y+s*a.z, t*a.x*a.z-s*a.y,
+                    t*a.x*a.y-s*a.z, t*a.y*a.y+c, t*a.y*a.z+s*a.x,
+                    t*a.x*a.z+s*a.y, t*a.y*a.z-s*a.x, t*a.z*a.z+c); }
 
 // width profile along u in [0,1]: rounded root, widest ~0.35, needle tip
 // centred sheet: widest at the middle, needles at both ends, slightly asymmetric
@@ -97,7 +103,7 @@ half4 sheetColor(int k){
 
 half4 main(float2 fc){
     float2 pS = (fc - 0.5*uSize) / (0.45*uSize.x);
-    float sizeI = mix(1.0, 1.6, uIdle);   // r37 idle: sheet radius x1.6 (fills ~85% of the ball)
+    float sizeI = mix(1.0, 1.5, uIdle);   // r38 idle: sheet radius (radial fade caps the outer edge at ~0.7R)
     float2 p = pS / (uScale * mix(0.8, 0.9, uProc) * sizeI);   // sheets kept within ~0.85R   // sheets at 0.9 stay inside the glass   // ribbons fill the glass
     p.y = -p.y;
     float3 ro = float3(0, 0, 5.85);                  // camera 2700/461
@@ -107,7 +113,7 @@ half4 main(float2 fc){
     float r = length(pS);
     float rad0 = mix(0.78, 0.80, uProc) + 0.5 * uListen;
     float rad1 = mix(0.88, 0.97, uProc) + 0.5 * uListen;
-    float radial = 1.0 - smoothstep(mix(rad0, 0.80, uIdle), mix(rad1, 0.93, uIdle), r);   // idle: melt into black before the glass rim
+    float radial = 1.0 - smoothstep(mix(rad0, 0.62, uIdle), mix(rad1, 0.74, uIdle), r);   // idle: melt into black before the glass rim
     float q1 = 1.0 - uProc;
     float starBoost = 1.0 + 3.0 * q1 * uSideK * exp(-(r/0.2)*(r/0.2));
     float dd6[6]; half4 cc6[6];
@@ -123,7 +129,7 @@ half4 main(float2 fc){
         if (k >= 3) ws *= 0.85;
         if (k == 0) ws *= 0.7;                              // green: thin sliver (edge-on cyan back to 1.0x)
         // idle: RGB each ~1/3 area (blue shrinks, red/green grow); extras stay smaller
-        float wsI = k == 0 ? 1.45 : (k == 1 ? 0.62 : (k == 2 ? 1.35 : (k == 3 ? 0.55 : (k == 4 ? 1.1 : (k == 5 ? 1.1 : ws)))));   // r37: blue area -20%+ (tuned by measured RGB share), green larger
+        float wsI = k == 0 ? 0.85 : (k == 1 ? 0.62 : (k == 2 ? 1.95 : (k == 3 ? 0.55 : (k == 4 ? 1.75 : (k == 5 ? 0.75 : ws)))));   // r38: tuned to measured share   // r37: blue area -20%+ (tuned by measured RGB share), green larger
         ws = mix(ws, wsI, uIdle);
         ws *= (k == 1) ? mix(1.0, 0.7, uListen) : mix(1.0, 1.6, uListen);   // listening: petals x1.6, blue lens 0.7x
         // per-sheet X/Y/Z rates (deg/s), AE: time*30 / time*45 / -time*30 / -time*45
@@ -163,6 +169,21 @@ half4 main(float2 fc){
         float3 offW = max(uRing * uMove, (0.08 + 0.06 * uGather) * uProc) * float3(cos(slot), sin(slot), 0.0);   // keep ~0.08R apart when gathered
         float rimMul = k >= 4 ? 0.0 : 0.5;
         float3x3 R = rotZ(ang.z) * rotY(ang.y) * rotX(ang.x);
+        if (uIdle > 0.001) {
+            // r38 idle: every sheet folds slowly the same way about one shared axis (per-sheet axis within ~11 deg of it, <= 14 deg/s)
+            float3 A = normalize(float3(0.15, 0.7, 0.7));
+            float3 ax = normalize(A + 0.2 * float3(cos(fk*1.047), 0.0, sin(fk*1.047)));
+            float tI = uSpinT / 0.6;   // spinT runs at the idle speed 0.6 -> real seconds
+            float wD = k == 0 ? 14.0 : (k == 1 ? 11.0 : (k == 2 ? 13.0 : (k == 5 ? 12.0 : 0.0)));
+            float th0 = k == 0 ? 0.4 : (k == 1 ? 0.0 : (k == 2 ? 1.2 : (k == 5 ? 3.6 : 0.0)));
+            float th = th0 + wD * (PI/180.0) * tI;
+            if (k == 3 || k == 4) th = 0.2 * sin(0.3 * tI + fk);   // held near edge-on (base pose below), <= 3.5 deg/s
+            float gam = k == 0 ? 0.2 : (k == 1 ? 1.3 : (k == 2 ? 2.4 : (k == 3 ? 0.75 : (k == 4 ? 1.85 : 2.95))));
+            float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
+            float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
+            float3 c0 = normalize(Rm[0]); float3 c1 = normalize(Rm[1] - dot(Rm[1], c0) * c0); float3 c2 = cross(c0, c1);
+            R = float3x3(c0, c1, c2);
+        }
         float3x3 Ri = float3x3(R[0][0],R[1][0],R[2][0], R[0][1],R[1][1],R[2][1], R[0][2],R[1][2],R[2][2]);
         // idle breathing: wiggle(0.2, 10/15) on twist and bend
         float br = sin(6.2832*0.2*t + fk*2.1), br2 = sin(6.2832*0.2*t + fk*1.3 + 1.0);
@@ -184,10 +205,15 @@ half4 main(float2 fc){
             tt += max(dd * mix(0.4, 0.3, uListen), 0.0012);   // listening: finer march, no ragged silhouettes
             if (tt > length(o) + 1.5) break;
         }
-        half4 col = half4(pow(sheetColor(k).rgb, half3(2.2)), 1);
+        half3 baseC = sheetColor(k).rgb;
+        if (k == 0) baseC = mix(baseC, half3(0.315, 0.72, 0.666), half(uIdle));   // r38: green +15 deg toward cyan, sat -25%
+        if (k == 5) baseC = mix(baseC, half3(0.09, 0.32, 0.30), half(uIdle));
+        if (k == 2) baseC = mix(baseC, half3(0.88, 0.25, 0.36), half(uIdle));     // r38: warm pink-red, not deep red
+        if (k == 4) baseC = mix(baseC, half3(0.62, 0.17, 0.25), half(uIdle));
+        half4 col = half4(pow(baseC, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
         // analytic AA: near-miss within ~1 px still contributes with fractional coverage
-        if (!hit && minD < pxW * (1.0 - uIdle) && uPass < 0.5 && uProc < 0.01) { hit = true; tt = nearT; aaK = 1.0 - minD / pxW; }
+        if (!hit && minD < pxW && uPass < 0.5 && uProc < 0.01) { hit = true; tt = nearT; aaK = 1.0 - minD / pxW; }
         if (hit && uListen > 0.01) {
             // refine the hit depth (stable depth order where petals intersect; removes notched intersection lines)
             for (int r2 = 0; r2 < 4; r2++) { float2 uvR; tt += sheetSdf(o + d*tt, twist, bend, ws, uvR) * 0.9; }
@@ -208,7 +234,7 @@ half4 main(float2 fc){
             // depth fog: far half fades to black (AE fog start 2700, range 1000)
             float z = (R * pos).z;
             float fog = pow(clamp(0.4 + 0.6*z/0.8, 0.0, 1.0), 1.6);   // stronger depth fade
-            float front = smoothstep(-0.08, 0.12, z);                    // behind the sphere centre -> 0
+            float front = smoothstep(mix(-0.08, -0.5, uIdle), mix(0.12, 0.5, uIdle), z);                    // behind the sphere centre -> 0
             fog = mix(fog * mix(0.3 / 0.4, 1.0, front), 1.0, uProc);    // back halves ~30%
             float rimFront = mix(front, 1.0, uProc);
             float centre = 1.0 - smoothstep(0.15, 1.0, abs(2.0*uv.x - 1.0));
@@ -230,15 +256,18 @@ half4 main(float2 fc){
                 a = mix(a, 0.9 * eo, uProc);
                 // depth layer split: world z of the hit (camera at +z)
                 float zw = (R * (pos * sc)).z + offW.z;
-                float wf = smoothstep(-0.08, 0.08, zw);
+                float wf = smoothstep(-mix(0.08, 0.45, uIdle), mix(0.08, 0.45, uIdle), zw);   // r38 idle: no hard radial cut at z=0 (fan-blade stripes)
                 if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
                 float rS = r / max(uScale, 0.05);   // radius relative to orb size (small appear orb is not all 'centre')
                 float edgeOnly = mix(1.0, smoothstep(0.45, 0.95, abs(uv.y)), uRes);
                 float bR = mix(0.45, 0.12, uIdle);
                 bri *= 1.0 + mix(2.5, 4.6, uIdle) * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/bR)*(rS/bR));   // idle: tighter star from side-on edges
-                float edge6 = 1.0 - smoothstep(0.0, 0.06, v);   // r37 idle: bright edge ~6% of sheet width
+                float whiteR = 1.0 - smoothstep(0.2, 0.45, rS);   // r38: full to 0.2R, gone by 0.45R
+                float wE6 = mix(0.06, 0.02, smoothstep(0.0, 0.45, rS));
+                float wPx = pxW / max(2.0 * sheetHalfW(pos, ws), 1e-4);   // 1.5 px in v units
+                float edge6 = 1.0 - smoothstep(0.0, max(wE6, wPx), v);
                 float s4 = pow(clamp(sideS, 0.0, 1.0), 4.0);
-                bri *= mix(1.0, (1.0 + 0.4 * (1.0 - v)) * (1.0 + edge6 * (0.6 + 2.4 * s4)), uIdle);
+                bri *= mix(1.0, (1.0 + 0.4 * (1.0 - v)) * (1.0 + edge6 * mix(0.5, 0.6 + 2.4 * s4, whiteR)), uIdle);
                 a *= aaK * uBodyA;
                 // listening: inner edge coverage over ~1.5 px (distance to the petal edge in pixels)
                 float wE = sheetHalfW(pos, ws);
@@ -263,7 +292,8 @@ half4 main(float2 fc){
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
                 float wR = mix(0.28, 0.12, uIdle);   // r37: white star radius 12% R
                 float wm = (1.0 - 0.6 * uListen) * mix(0.6, 1.0, uIdle) * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/wR)*(rS/wR)) * mix(1.0, mix(0.15, 1.0, 1.0 - v), uIdle);
-                wm = max(wm, 0.6 * uIdle * edge6 * s4);   // r37 idle: highlight -> white 0.6
+                wm = max(wm, 0.6 * uIdle * edge6 * s4 * whiteR);   // r38: white only within 0.45R
+                if (uDebug > 0.5) { wm = 0.0; col.rgb = (k == 0 || k == 5) ? half3(0,1,0) : ((k == 2 || k == 4) ? half3(1,0,0) : half3(0,0,1)); }
                 col.rgb = mix(col.rgb, half3(1.0), half(wm));
                 half lc = dot(col.rgb, half3(0.2126, 0.7152, 0.0722));
                 col.rgb = max(mix(half3(lc), col.rgb, half(mix(1.0, 1.0/1.3, wm))), half3(0));
@@ -317,7 +347,8 @@ internal data class OrbParams(
 internal fun renderSheetStills(
     outDir: Path, count: Int, fps: Double, seconds: Double, size: Int = 870,
     prefix: String = "s",
-    paramsAt: (Int, Double) -> OrbParams = { _, t -> OrbParams(spinT = t.toFloat(), sideK = (System.getenv("SIDEK") ?: "1.25").toFloat(), core = (System.getenv("CORE") ?: System.getenv("SIDEK") ?: "1.25").toFloat()) },
+    paramsAt: (Int, Double) -> OrbParams = { _, t -> OrbParams(spinT = 0.6f * t.toFloat(),   // r38: same idle speed as the demo (0.6)
+        sideK = (System.getenv("SIDEK") ?: "1.25").toFloat(), core = (System.getenv("CORE") ?: System.getenv("SIDEK") ?: "1.25").toFloat()) },
 ) {
     val effect = RuntimeEffect.makeForShader(SheetSksl)
     val threshold = RuntimeEffect.makeForShader("""
@@ -401,6 +432,7 @@ internal fun renderSheetStills(
             b.uniform("uBodyA", prm.bodyA)
             b.uniform("uRes", prm.res)
             b.uniform("uIdle", prm.idle)
+            b.uniform("uDebug", (System.getenv("DEBUG_ID") ?: "0").toFloat())
             val surf = Surface.makeRaster(org.jetbrains.skia.ImageInfo(sz, sz, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
             surf.canvas.clear(if (layer > 0f) Color.TRANSPARENT else Color.BLACK)
             surf.canvas.drawPaint(Paint().apply { this.shader = b.makeShader() })
@@ -419,7 +451,7 @@ internal fun renderSheetStills(
         val bodyImg = if (prm.proc < 0.99f) {
             val front = pass(0f, 1f); val backImg = pass(0f, 2f)
             val bs = f16(); bs.canvas.clear(Color.BLACK)
-            val bb = radius * 0.04f * (1f - prm.proc) + 0.01f
+            val bb = radius * mixF(0.04f, 0.015f, id) * (1f - prm.proc) + 0.01f   // r38 idle: lighter back blur
             bs.canvas.drawImage(backImg, 0f, 0f, Paint().apply { imageFilter = ImageFilter.makeBlur(bb, bb, FilterTileMode.DECAL); blendMode = BlendMode.PLUS })
             bs.canvas.drawImage(front, 0f, 0f, Paint().apply { blendMode = BlendMode.SRC_OVER })   // front sharp, OVER the blurred back
             bs.makeImageSnapshot()
@@ -542,7 +574,7 @@ internal fun renderSheetStills(
         // r37 idle glass: no hard line; soft fresnel band ~8% R inside the edge, red lower-left / blue upper-right, peak 0.25
         if (id > 0.01f && sh > 0.01f) {
             val fb = RuntimeShaderBuilder(fresnelFx)
-            fb.uniform("uC", cx, cx); fb.uniform("uR", radius); fb.uniform("uA", 0.25f * id * sh); fb.uniform("uPx", 1.5f / radius)
+            fb.uniform("uC", cx, cx); fb.uniform("uR", radius); fb.uniform("uA", 0.15f * id * sh); fb.uniform("uPx", 1.5f / radius)
             fc.drawPaint(Paint().apply { shader = fb.makeShader(); blendMode = BlendMode.PLUS })
         }
         // Result: noticeably bright glass edge
