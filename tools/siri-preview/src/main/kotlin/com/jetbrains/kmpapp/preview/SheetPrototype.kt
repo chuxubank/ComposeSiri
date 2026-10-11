@@ -135,12 +135,12 @@ half4 main(float2 fc){
     float radial = 1.0 - smoothstep(mix(rad0, 0.95, uIdle), mix(rad1, 1.0, uIdle), r);   // r42 idle: no radial opacity fade, lens shape closes the outline   // idle: melt into black before the glass rim
     float q1 = 1.0 - uProc;
     float starBoost = 1.0 + 3.0 * q1 * uSideK * exp(-(r/0.2)*(r/0.2));
-    float dd6[7]; half4 cc6[7];   // r51c: up to 7 sheets (idle adds a half-side blue)
-    for (int j = 0; j < 7; j++) { dd6[j] = -1.0; cc6[j] = half4(0); }
-    for (int k = 0; k < 7; k++) {
+    float dd6[8]; half4 cc6[8];   // r51c: up to 7 sheets (idle adds a half-side blue)
+    for (int j = 0; j < 8; j++) { dd6[j] = -1.0; cc6[j] = half4(0); }
+    for (int k = 0; k < 8; k++) {
         if (float(k) >= uCount) break;
         float fk = float(k);
-        if (k == 6 && uIdle < 0.5) break;   // r51c: 7th sheet is idle-only
+        if (k >= 6 && uIdle < 0.5) break;   // r60: k6,k7 idle-only   // r51c: 7th sheet is idle-only
         float t = uTime;
         // AE: time*45+value / -time*30+value deg/s, counter-rotating groups; wiggle(0.2,10/15)
         float spin = (mod(fk,2.0) < 0.5 ? 45.0 : -30.0) * PI/180.0;
@@ -201,9 +201,9 @@ half4 main(float2 fc){
             float gam = k == 0 ? 0.2 : (k == 1 ? 1.3 : (k == 2 ? 2.4 : (k == 3 ? 0.75 : (k == 4 ? 1.85 : 2.95))));
             float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
             // r43c idle: long axis pitched 35..80 deg out of the screen plane, random azimuth (drift 3 deg/s); sheet rolls about its long axis <= 14 deg/s, phases staggered so 2-3 sheets are near edge-on (|n.v| < 0.3) at any time
-            float pitI = k == 6 ? 0.1745 : k == 0 ? 0.2094 : (k == 1 ? 0.1745 : (k == 2 ? 0.1745 : (k == 3 ? 0.3491 : (k == 4 ? 0.1745 : 0.3054))));   // r50: blades k3/k5 pitch 20/17.5 deg so they project long (~0.75R) // r51e k6 pitch 10
-            float psiI = (k == 6 ? 2.46 : (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 1.92 : (k == 3 ? 1.396 : (k == 4 ? 2.97 : 3.665)))))) + 0.2269 * tI;   // r51: azimuth drift 13 deg/s (was 3 deg/s; with rolls held, frames looked frozen) // r51e // r52: reds moved off the blue axes (lens axis repeats every 180 deg; 4.538/5.585 coincided with blues k3/k1) // r59: k6 axis ~60 deg from both other blades
-            float rolI = (k == 6) ? (1.5708 + 0.26 * sin(0.32 * tI + 6.0)) : (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.56 : (k == 1 ? -0.49 : (k == 2 ? 0.25 : -0.52))) + 0.04 * sin(0.3 * tI + fk)) : ((k == 3 ? 1.5708 : -1.5708) + 0.26 * sin((k == 3 ? 0.35 : 0.28) * tI + fk));   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6 // r50: blades held edge-on (roll 90 +-15 deg, <=5 deg/s) -> always side-on > 0.75 // r51e k6 held ~31 deg off view // r52: red k2 near face-on (~14 deg) // r59: k6 becomes the 3rd edge-on blade (was half-side; only 2 sheets had side>0.75 in all 50 frames)
+            float pitI = (k == 6 || k == 7) ? 0.1745 : k == 0 ? 0.2094 : (k == 1 ? 0.1745 : (k == 2 ? 0.1745 : (k == 3 ? 0.3491 : (k == 4 ? 0.1745 : 0.3054))));   // r50: blades k3/k5 pitch 20/17.5 deg so they project long (~0.75R) // r51e k6 pitch 10
+            float psiI = (k == 7 ? 1.0 : k == 6 ? 2.46 : (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 1.92 : (k == 3 ? 1.396 : (k == 4 ? 2.97 : 3.665)))))) + 0.2269 * tI;   // r51: azimuth drift 13 deg/s (was 3 deg/s; with rolls held, frames looked frozen) // r51e // r52: reds moved off the blue axes (lens axis repeats every 180 deg; 4.538/5.585 coincided with blues k3/k1) // r59: k6 axis ~60 deg from both other blades
+            float rolI = (k == 7) ? (0.50 + 0.04 * sin(0.3 * tI + 7.0)) : (k == 6) ? (1.5708 + 0.08 * sin(0.32 * tI + 6.0)) : (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.56 : (k == 1 ? -0.49 : (k == 2 ? 0.25 : -0.52))) + 0.04 * sin(0.3 * tI + fk)) : ((k == 3 ? 1.5708 : -1.5708) + 0.08 * sin((k == 3 ? 0.35 : 0.28) * tI + fk));   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6 // r50: blades held edge-on (roll 90 +-15 deg, <=5 deg/s) -> always side-on > 0.75 // r51e k6 held ~31 deg off view // r52: red k2 near face-on (~14 deg) // r59: k6 becomes the 3rd edge-on blade (was half-side; only 2 sheets had side>0.75 in all 50 frames) // r60: blade roll +-15 deg -> +-4.6 deg; the +-15 deg roll pushed side below 0.9 so core lines faded (white drop after 1 s)
             float3 lI = float3(cos(pitI) * cos(psiI), cos(pitI) * sin(psiI), sin(pitI));
             float3 m2I = normalize(cross(lI, float3(0.0, 0.0, 1.0)));
             float3 m1I = cross(m2I, lI);
@@ -221,8 +221,8 @@ half4 main(float2 fc){
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         bend = mix(bend, 0.06 + 0.008 * fk, uIdle);   // r46: bow 0.06..0.1
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
-        ws = mix(ws, (k == 6 ? 0.8 : k == 0 ? 0.9 : (k == 1 ? 1.1 : (k == 2 ? 0.9 : (k == 3 ? 1.0 : (k == 4 ? 0.98 : 1.05))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%)
-        offW += uIdle * (k == 6 ? 0.05 : k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R // r51e
+        ws = mix(ws, (k == 7 ? 0.8 : k == 6 ? 0.8 : k == 0 ? 0.9 : (k == 1 ? 1.1 : (k == 2 ? 0.9 : (k == 3 ? 1.0 : (k == 4 ? 0.98 : 1.05))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%)
+        offW += uIdle * (k == 7 ? 0.05 : k == 6 ? 0.05 : k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R // r51e
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         if (k == 2) offW += float3(0.0, 0.0, 0.25 * uIdle);   // r52: face-on red sits in front
         float3 nW = R * float3(0, 0, 1);
@@ -248,6 +248,7 @@ half4 main(float2 fc){
         if (uIdle > 0.5) { if (k == 3) baseC = half3(0.184, 0.42, 1.0); if (k == 4) baseC = half3(1.0, 0.231, 0.188); }   // r53: second red #FF3B30
         if (uIdle > 0.5 && k == 5) baseC = half3(0.235, 0.784, 0.94);   // r46: sixth sheet cyan #3CC8F0
         if (uIdle > 0.5 && k == 6) baseC = half3(0.184, 0.42, 1.0);   // r51e: 7th sheet blue #2F6BFF
+        if (uIdle > 0.5 && k == 7) baseC = half3(0.184, 0.42, 1.0);   // r60: 8th sheet half-side blue fill
         half4 col = half4(pow(baseC, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
         // analytic AA: near-miss within ~1 px still contributes with fractional coverage
@@ -333,7 +334,7 @@ half4 main(float2 fc){
                 float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
                 a = mix(a, aSilk, uIdle);
-                float corePx = abs(uv.y) * sheetHalfW(pos, ws) * abs(nW.z) / max(pxW / 1.5, 1e-6); float uAx = abs(2.0 * uv.x - 1.0); float coreHW = mix(2.0, 0.75, uAx); float coreK = smoothstep(0.75, 0.9, sideS) * (1.0 - smoothstep(coreHW - 0.5, coreHW + 0.25, corePx)); if (uBlade > 0.5) { a = coreK; bri = mix(2.5, 1.5, smoothstep(0.1, 0.25, rS)) * mix(1.0, 0.8, uAx); }   // r56: blade pass keeps only the projected spine of sheets with side > 0.85, <= 3 px wide // r57: soft side fade 0.75-0.9; width 4px at centre -> 1.5px at tips, brighter at centre // r58: core 2.0 within 0.1R, back to 1.5 by 0.25R // r59: centre 2.5
+                float corePx = abs(uv.y) * sheetHalfW(pos, ws) * abs(nW.z) / max(pxW / 1.5, 1e-6); float uAx = abs(2.0 * uv.x - 1.0); float coreHW = mix(2.0, 0.75, uAx) + uIdle * (1.0 - smoothstep(0.12, 0.18, rS)); float coreK = smoothstep(0.75, 0.9, sideS) * (1.0 - smoothstep(coreHW - 0.5, coreHW + 0.25, corePx)); if (uBlade > 0.5) { a = coreK; bri = mix(2.5, 1.5, smoothstep(0.1, 0.25, rS)) * mix(1.0, 0.8, uAx); }   // r56: blade pass keeps only the projected spine of sheets with side > 0.85, <= 3 px wide // r57: soft side fade 0.75-0.9; width 4px at centre -> 1.5px at tips, brighter at centre // r58: core 2.0 within 0.1R, back to 1.5 by 0.25R // r59: centre 2.5 // r60: half width 3px within 0.15R
                 bri = min(bri, mix(1e3, 1.1, uRes));   // result: no fully white sheet bodies
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
                 float wR = mix(0.28, 0.12, uIdle);   // r37: white star radius 12% R
@@ -351,7 +352,7 @@ half4 main(float2 fc){
                     half3 e = min(c4.rgb * c4.a, half3(1.0));
                     acc = acc + e - acc * e;          // Screen
                 } else {
-                    for (int j = 0; j < 7; j++) { if (j == k) { dd6[j] = tt; cc6[j] = c4; } }
+                    for (int j = 0; j < 8; j++) { if (j == k) { dd6[j] = tt; cc6[j] = c4; } }
                 }
             } else {
                 // first hit only; far side attenuated by fog^2; tips fade radially
@@ -369,12 +370,12 @@ half4 main(float2 fc){
     }
     if (uPass < 0.5 && uBlend < 0.5) {
         // back-to-front OVER (largest ray distance first)
-        for (int s = 0; s < 7; s++) {
+        for (int s = 0; s < 8; s++) {
             float dm = -1.0; float bi = -1.0;
-            for (int j = 0; j < 7; j++) { if (dd6[j] > dm) { dm = dd6[j]; bi = float(j); } }
+            for (int j = 0; j < 8; j++) { if (dd6[j] > dm) { dm = dd6[j]; bi = float(j); } }
             if (dm < 0.0) break;
             half4 c4 = half4(0);
-            for (int j = 0; j < 7; j++) { if (float(j) == bi) { c4 = cc6[j]; dd6[j] = -1.0; } }
+            for (int j = 0; j < 8; j++) { if (float(j) == bi) { c4 = cc6[j]; dd6[j] = -1.0; } }
             acc = c4.rgb * c4.a + acc * (1.0 - c4.a); accA = c4.a + accA * (1.0 - c4.a);
         }
     }
@@ -543,7 +544,7 @@ internal fun renderSheetStills(
             Triple(radius * mixF(0.036f, 0.013f, id), radius * mixF(0.021f, 0.0055f, id), 2),
             Triple(radius * mixF(0.015f, 0.007f, id), radius * mixF(0.006f, 0.0028f, id), 4),
         )) {
-          val total = mixF(1.3f, 0.2f, id)   /* r47 idle: additive centre, peak ~0.9 with the soft glow */ * 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc)) // r59: idle core strength 0.2
+          val total = mixF(1.3f, 0.042f, id)   /* r47 idle: additive centre, peak ~0.9 with the soft glow */ * 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc)) // r59: idle core strength 0.2 // r60: real idle sum 0.042*0.8*(2+4) ~= 0.2
           var left = total
           while (left > 0.001f) {
             val a = left.coerceAtMost(1f); left -= a
