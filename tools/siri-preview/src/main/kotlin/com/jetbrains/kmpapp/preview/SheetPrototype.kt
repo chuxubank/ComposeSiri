@@ -36,7 +36,8 @@ uniform float uTangle;    // appear: 1 = twisted/compressed pose, 0 = unwound
 uniform float uBlend;     // body compositing: 0 = OVER (depth sorted), 1 = Screen
 uniform float uGrey;      // grey/desaturation amount of the drops (decoupled from shape in Result)
 uniform float uListen;
-uniform float uBodyA;     // sheet opacity multiplier (appear)    // listening: rounder petals, brighter, slightly less blue
+uniform float uBodyA;
+uniform float uRes;       // result: white only on sheet edges     // sheet opacity multiplier (appear)    // listening: rounder petals, brighter, slightly less blue
 uniform float uLayer;     // 0 = all, 1 = front half only, 2 = behind-centre half only (depth blur)
 
 const float PI = 3.14159265;
@@ -57,7 +58,7 @@ float profile(float u){
 
 // signed-ish distance to sheet k in its local frame; also returns (u, v) in uv
 float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
-    float L = 1.05;              // half length (shell radii): 85% of diameter x1.5
+    float L = 1.05 * (1.0 - 0.3 * uListen);   // listening: shorter petals, aspect <= 2:1              // half length (shell radii): 85% of diameter x1.5
     float u = (p.x + L) / (2.0*L);
     // bend: centreline arcs in y, centred
     float xs = p.x / L;
@@ -118,7 +119,7 @@ half4 main(float2 fc){
                     : (k == 3 ? float3(0.9, 3.3, 4.0) : (k == 4 ? float3(3.7, 1.6, 0.5) : float3(5.1, 4.4, 2.9)))));
         float3 ang = off + rate * (PI/180.0) * uSpinT * 0.5 + float3(wig*0.35, wig*0.25, -wig*0.2);
         // long-term near edge-on sheets (cyan, dark red): plane normal kept ~perpendicular to the view
-        if (k == 3 || k == 4) ang.x = 1.5708 + 0.22 * sin(t * 0.6 + fk) + (k == 4 ? 3.1416 : 0.0);
+        if (k == 3 || k == 4) ang.x = mix(1.5708 + 0.22 * sin(t * 0.6 + fk) + (k == 4 ? 3.1416 : 0.0), 0.5 * sin(t * 0.6 + fk), uListen);   // listening: face-on
         // blue: limit flip so its normal stays within ~50 deg of the view (|x|,|y| tilt <= 0.6 rad)
         if (k == 1) { ang.x = 0.6 * sin(ang.x); ang.y = 0.6 * sin(ang.y); }
         // other non-edge-on sheets: tilt <= 1 rad per axis -> side <= 0.71, so only cyan/dark-red exceed 0.8
@@ -143,7 +144,7 @@ half4 main(float2 fc){
         // idle breathing: wiggle(0.2, 10/15) on twist and bend
         float br = sin(6.2832*0.2*t + fk*2.1), br2 = sin(6.2832*0.2*t + fk*1.3 + 1.0);
         float twist = (1.4 + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1 * (1.0 - 0.5 * uListen);   // listening: less twist -> petals   // wiggle(0.2, ~15 deg)
-        float bend = mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
+        float bend = (1.0 - 0.6 * uListen) * mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         if (k == 1) offW += float3(0.0, 0.0, 0.22 * q1);   // blue sits ~0.1R toward the camera, mostly in front of red
         float3 nW = R * float3(0, 0, 1);
@@ -188,7 +189,8 @@ half4 main(float2 fc){
             if (uPass < 0.5) {
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
-                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.8 * (0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 0.0)) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
+                float rA = r / max(uScale, 0.05);
+                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(rA/0.35)*(rA/0.35))) * (1.0 + 0.8 * (0.5 * uSideK * exp(-(rA/0.13)*(rA/0.13)) + 0.0)) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
                 float a = 0.9 * (1.0 - smoothstep(0.97, 1.0, abs(uv.y))) * (0.75 + 0.25*centre) * fog;   // solid body, ~3% feather
                 // solid hard-edged oval with a slight soft edge
                 // feathered white disc -> soft oval when flat
@@ -199,16 +201,19 @@ half4 main(float2 fc){
                 float zw = (R * (pos * sc)).z + offW.z;
                 float wf = smoothstep(-0.08, 0.08, zw);
                 if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
-                bri *= 1.0 + 2.5 * q1 * pow(sideS, 4.0) * exp(-(r/0.45)*(r/0.45));   // whole-sheet brightening when edge-on
+                float rS = r / max(uScale, 0.05);   // radius relative to orb size (small appear orb is not all 'centre')
+                float edgeOnly = mix(1.0, smoothstep(0.45, 0.95, abs(uv.y)), uRes);
+                bri *= 1.0 + 2.5 * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/0.45)*(rS/0.45));   // whole-sheet brightening when edge-on
                 a *= aaK * uBodyA;
                 if (k == 1) a *= mix(1.0, 0.8 / 0.9, uListen);   // blue alpha ~0.8 in listening
                 bri *= 1.0 + 0.25 * uListen;
                 if (k == 2) { bri *= mix(0.8, 1.0, uProc); a *= mix(0.7 / 0.9, 1.0, uProc); }   // red: darker, alpha 0.7
                 bri *= mix(1.0, mix(1.0, 0.5, smoothstep(0.6, 0.9, sideS) * (1.0 - wf)), q1);   // edge-on sheets behind centre x0.5
-                bri *= 1.0 + 0.8 * q1 * exp(-(r/0.5)*(r/0.5));                                   // internal brightness gradient
+                bri *= 1.0 + 0.8 * q1 * exp(-(rS/0.5)*(rS/0.5));                                   // internal brightness gradient
                 bri *= mix(1.0, mix(1.0, 0.7, smoothstep(0.7, 1.0, abs(uv.y))), q1);           // darker toward sheet boundaries
+                bri = min(bri, mix(1e3, 1.1, uRes));   // result: no fully white sheet bodies
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
-                float wm = (1.0 - 0.6 * uListen) * 0.6 * q1 * pow(sideS, 4.0) * exp(-(r/0.28)*(r/0.28));
+                float wm = (1.0 - 0.6 * uListen) * 0.6 * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/0.28)*(rS/0.28));
                 col.rgb = mix(col.rgb, half3(1.0), half(wm));
                 half lc = dot(col.rgb, half3(0.2126, 0.7152, 0.0722));
                 col.rgb = max(mix(half3(lc), col.rgb, half(mix(1.0, 1.0/1.3, wm))), half3(0));
@@ -255,7 +260,7 @@ internal data class OrbParams(
     val sideK: Float = 1f, val shell: Float = 1f,
     val proc: Float = 0f, val orbit: Float = 0f, val tangle: Float = 0f,
     val move: Float = 0f, val ring: Float = 0.4f, val gather: Float = 0f, val flash: Float = 0f,
-    val grey: Float = -1f, val listen: Float = 0f, val bodyA: Float = 1f, val edge: Float = 0f,
+    val grey: Float = -1f, val listen: Float = 0f, val bodyA: Float = 1f, val edge: Float = 0f, val coreScale: Float = -1f, val res: Float = 0f,
 )
 
 internal fun renderSheetStills(
@@ -287,10 +292,14 @@ internal fun renderSheetStills(
             return half4(pow(x, half3(1.0 / 2.2)), 1);
         }
     """)
+    val glowFx = RuntimeEffect.makeForShader("""
+        uniform float2 uC; uniform float uR; uniform float uG;
+        half4 main(float2 c) { float x = length(c - uC) / uR; return half4(half3(uG * exp(-x * x * 9.0)), 1); }
+    """)
     val spillFx = RuntimeEffect.makeForShader("""
-        uniform shader img; uniform float2 uSize; uniform float uK;
+        uniform shader img; uniform float2 uSize; uniform float uK; uniform float uSc;
         half4 main(float2 c) {
-            float r = length(c - 0.5*uSize) / (0.45*uSize.x);
+            float r = length(c - 0.5*uSize) / (0.45*uSize.x) / max(uSc, 0.05);   // relative to orb size
             half3 x = max(img.eval(c).rgb, half3(0));
             half l = min(dot(x, half3(0.2126, 0.7152, 0.0722)) * 3.0, 1.0);
             half w = half(uK * (1.0 - smoothstep(0.0, 0.3, r)));
@@ -325,6 +334,7 @@ internal fun renderSheetStills(
             b.uniform("uGrey", if (prm.grey >= 0f) prm.grey else prm.proc)
             b.uniform("uListen", prm.listen)
             b.uniform("uBodyA", prm.bodyA)
+            b.uniform("uRes", prm.res)
             val surf = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
             surf.canvas.clear(if (layer > 0f) Color.TRANSPARENT else Color.BLACK)
             surf.canvas.drawPaint(Paint().apply { this.shader = b.makeShader() })
@@ -353,11 +363,11 @@ internal fun renderSheetStills(
         })
         // White spill: pure white (luminance of sheet coverage only, no hue), Screen, falls to 0 by 0.3R.
         run {
-            val k0 = ((System.getenv("SPILL") ?: "1").toFloat() * 0.3f * prm.sideK * prm.sideK * (1f - prm.move) * (1f - smoothstepF(0f, 0.03f, prm.proc))).coerceAtLeast(0f)   // off in processing/result until regrown
+            val k0 = ((System.getenv("SPILL") ?: "1").toFloat() * 0.3f * prm.sideK * prm.sideK * (1f - prm.move) * (1f - smoothstepF(0f, 0.03f, prm.proc)) * (1f - prm.res)).coerceAtLeast(0f)   // result: spill no longer paints sheets white   // off in processing/result until regrown
             if (k0 > 0.001f) {
                 val sb = RuntimeShaderBuilder(spillFx)
                 sb.child("img", bodyImg.makeShader())
-                sb.uniform("uSize", size.toFloat(), size.toFloat()); sb.uniform("uK", k0)
+                sb.uniform("uSize", size.toFloat(), size.toFloat()); sb.uniform("uK", k0); sb.uniform("uSc", prm.scale)
                 c.drawPaint(Paint().apply { shader = sb.makeShader(); blendMode = BlendMode.SCREEN })
             }
         }
@@ -371,7 +381,7 @@ internal fun renderSheetStills(
           var left = total
           while (left > 0.001f) {
             val a = left.coerceAtMost(1f); left -= a
-            c.drawCircle(cx, cx, r * prm.scale.coerceIn(0.55f, 1.5f), Paint().apply {
+            c.drawCircle(cx, cx, r * (if (prm.coreScale >= 0f) prm.coreScale else prm.scale.coerceIn(0.55f, 1.5f)), Paint().apply {
                 color = ((a * 255).toInt() shl 24) or 0xFFFFFF
                 blendMode = BlendMode.PLUS
                 maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, sig)
@@ -381,11 +391,13 @@ internal fun renderSheetStills(
         // Wide soft glow ~0.5 R, strength ~0.35, fast falloff.
         run {
             val g = 0.15f * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
-            if (g > 0.001f) c.drawCircle(cx, cx, radius * 0.18f, Paint().apply {
-                color = ((g * 255).toInt().coerceIn(0, 255) shl 24) or 0xFFFFFF
-                blendMode = BlendMode.PLUS
-                maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.16f)
-            })
+            if (g > 0.001f) {
+                // radial gradient instead of a mask-blurred circle (the blur produced a faint square box at small sizes)
+                val gs = (if (prm.coreScale >= 0f) prm.coreScale else 1f) * radius * 0.5f
+                val gb = RuntimeShaderBuilder(glowFx)
+                gb.uniform("uC", cx, cx); gb.uniform("uR", gs); gb.uniform("uG", g)
+                c.drawPaint(Paint().apply { shader = gb.makeShader(); blendMode = BlendMode.PLUS })
+            }
         }
         // Gather flash: white core ~0.1 R, peak ~1.6
         if (prm.flash > 0.01f) {
@@ -453,10 +465,9 @@ internal fun renderSheetStills(
         }
         // Result: noticeably bright glass edge
         if (prm.edge > 0.01f) fc.drawCircle(cx, cx, radius * 0.975f, Paint().apply {
-            mode = org.jetbrains.skia.PaintMode.STROKE; strokeWidth = radius * 0.035f
-            color = ((0x90 * prm.edge.coerceIn(0f, 1f)).toInt() shl 24) or 0x9FD8FF
+            mode = org.jetbrains.skia.PaintMode.STROKE; strokeWidth = 1.5f; isAntiAlias = true
+            color = ((0x4C * prm.edge.coerceIn(0f, 1f)).toInt() shl 24) or 0x9FD8FF
             blendMode = BlendMode.PLUS
-            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.02f)
         })
         // Processing disc: #1C1C1F at 85%, radius 1.7x the ring; shrinks and fades with the ring (move).
         if (prm.move > 0.01f) {
@@ -479,10 +490,10 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
     val tg = mapOf(
         "Appear" to Target(1.0f, 1.0f, 1.0f, 1.0f), "Idle" to Target(0.6f, 1.0f, 1.0f, 1.0f),
         "Listening" to Target(1.3f, 1.3f, 1.2f, 1.2f), "Processing" to Target(1.0f, 1.0f, 1.0f, 1.0f),
-        "Result" to Target(0.48f, 0.8f, 1.0f, 1.1f), "Disappear" to Target(1.0f, 1.0f, 0.0f, 0.0f),
+        "Result" to Target(0.48f, 0.8f, 1.0f, 1.0f), "Disappear" to Target(1.0f, 1.0f, 0.0f, 0.0f),
     )
     val starts = SheetDemoStates.runningFold(0.0) { a, b -> a + b.second }
-    var listenK = 0f; var burstS = 0f
+    var listenK = 0f; var burstS = 0f; var resK = 0f
     var sideK = 1.25f; var speed = 1f; var flip = 1f; var scale = 0.0f; var core = 0f; var spinT = 0f; var orbit = 0f
     val total = starts.last()
     val dt = (1.0 / fps).toFloat()
@@ -495,7 +506,7 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
         val tE = (t - starts[si]).toFloat()
         speed += (st.speed - speed) * ease; flip += (st.flip - flip) * ease
         scale += (st.scale - scale) * ease; core += (st.core - core) * ease
-        val sideT = when (name) { "Listening" -> 1.0625f; "Processing" -> 0.9375f; "Result" -> 1.375f; else -> 1.25f }
+        val sideT = when (name) { "Listening" -> 1.0625f; "Processing" -> 0.9375f; else -> 1.25f }   // Result back to idle side-on params
         sideK += (sideT - sideK) * ease
         val voice = if (name == "Listening") {
             // VJshi: orb swells up to ~1.25x on loud syllables, never shrinks below rest size
@@ -527,16 +538,17 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
         }
         val gather = if (name == "Result") (smoothstepF(0.15f, 0.4f, tE) * (1f - smoothstepF(0.4f, 0.8f, tE))) else 0f
         labels.append("$i $name\n")
-        var dScale = 0f; var dCore = 0f; var fade = 1f; var tangle = 0f; var bodyA = 1f
+        var dScale = 0f; var dCore = 0f; var fade = 1f; var tangle = 0f; var bodyA = 1f; var coreScale = -1f
         when (name) {
             "Appear" -> {   // VJshi: dot -> full orb in ~0.6 s with a small overshoot, then settle by ~0.9 s
                 // round 31: ~0.3 at 0.35 s, 1.0 at 0.85 s; core tied to size so the first frames are coloured, not a white blob
                 // round 32: opacity rises with scale over 0.4 s; core held at 0.5 then full by 0.6 s; overshoot ~1.08 at 0.85 s
                 val e = smoothstepF(0.05f, 0.85f, tE)
-                val ov = 0.08f * kotlin.math.sin(Math.PI.toFloat() * smoothstepF(0.5f, 1.2f, tE))
+                val ov = 0.10f * kotlin.math.sin(Math.PI.toFloat() * smoothstepF(0.55f, 1.15f, tE))   // clearly visible ~1.08-1.1x at 0.85 s
                 scale = 0.06f + 0.94f * e + ov; tangle = 1f - e; fade = smoothstepF(0f, 0.1f, tE)
                 core = 0.5f + 0.5f * smoothstepF(0.4f, 0.6f, tE)
-                bodyA = smoothstepF(0f, 0.4f, tE) }
+                bodyA = smoothstepF(0f, 0.4f, tE)
+                coreScale = scale }   // core size follows the orb in appear only
             "Result" -> {
                 // reverse morph (1.0 s), then white flash 1.6 -> settle and spring bounce to ~1.08
                 // flash at the smallest (gathered) moment, then bounce as the orb regrows
@@ -564,11 +576,12 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
             else if (name == "Result") smoothstepF(0.6f, 1.0f, regrow)
             else if (name == "Disappear") fade * (1f - smoothstepF(0f, 0.6f, tE)) else fade
         // listening look eases in/out with the same 0.35 s constant
+        resK += ((if (name == "Result") 1f else 0f) - resK) * ease
         listenK += ((if (name == "Listening") 1f else 0f) - listenK) * ease
         // Result: drops recover their colour right after the gather flash instead of regrowing as grey silhouettes
         val grey = if (name == "Result") proc * (1f - smoothstepF(0f, 0.15f, tE)) else -1f   // Result colourful from its start
         val edge = if (name == "Result") smoothstepF(0.4f, 0.8f, tE) * (1f - smoothstepF(2.2f, 3.0f, tE)) else 0f
-        OrbParams(spinT, flip, (scale + dScale) * (1f + voice), (core + dCore) * (1f + voice), fade, sideOut, shell, proc, orbit, tangle, move, ring, gather, flash, grey, listenK, bodyA, edge)
+        OrbParams(spinT, flip, (scale + dScale) * (1f + voice), (core + dCore) * (1f + voice), fade, sideOut, shell, proc, orbit, tangle, move, ring, gather, flash, grey, listenK, bodyA, edge, coreScale, resK)
     })
     Files.writeString(outDir.resolve("labels.txt"), labels.toString())
 }
