@@ -77,6 +77,13 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
     return max(max(dz, dy), dx);
 }
 
+// half width (sheet units) at the point p: same parametrisation as sheetSdf
+float sheetHalfW(float3 p, float ws){
+    float L = 1.05 * (1.0 - 0.3 * uListen);
+    float u = clamp((p.x + L) / (2.0*L), 0.0, 1.0);
+    return profile(u) * 0.55 * ws;
+}
+
 half4 sheetColor(int k){
     // 4 main colours + 2 dimmer duplicates
     if (k == 0) return half4(0.18, 0.72, 0.525, 1);   // green #2EB886
@@ -152,12 +159,13 @@ half4 main(float2 fc){
         float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sc) * 1.5;   // AA transition ~1.5 screen px
         float3 o = Ri * ((ro - offW) / sc); float3 d = Ri * rd;
         float tt = length(o) - 1.5; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0); float nearT = 0.0; float aaK = 1.0;
-        for (int i = 0; i < 128; i++) {
+        for (int i = 0; i < 220; i++) {
+            if (i >= 128 && uListen < 0.01) break;
             float3 pos = o + d*tt;
             float dd = sheetSdf(pos, twist, bend, ws, uv);
             if (dd < minD) { minD = dd; nearUv = uv; nearT = tt; }
-            if (dd < 0.0005) { hit = true; break; }
-            tt += max(dd * 0.4, 0.0012);
+            if (dd < mix(0.0005, 0.003, uListen)) { hit = true; break; }   // listening: grazing rays no longer crawl out of iterations
+            tt += max(dd * mix(0.4, 0.3, uListen), 0.0012);   // listening: finer march, no ragged silhouettes
             if (tt > length(o) + 1.5) break;
         }
         half4 col = half4(pow(sheetColor(k).rgb, half3(2.2)), 1);
@@ -205,6 +213,10 @@ half4 main(float2 fc){
                 float edgeOnly = mix(1.0, smoothstep(0.45, 0.95, abs(uv.y)), uRes);
                 bri *= 1.0 + 2.5 * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/0.45)*(rS/0.45));   // whole-sheet brightening when edge-on
                 a *= aaK * uBodyA;
+                // listening: inner edge coverage over ~1.5 px (distance to the petal edge in pixels)
+                float wE = sheetHalfW(pos, ws);
+                float aaIn = clamp((1.0 - abs(uv.y)) * wE / pxW, 0.0, 1.0);
+                a *= mix(1.0, aaIn, uListen);
                 if (k == 1) a *= mix(1.0, 0.8 / 0.9, uListen);   // blue alpha ~0.8 in listening
                 bri *= 1.0 + 0.25 * uListen;
                 if (k == 2) { bri *= mix(0.8, 1.0, uProc); a *= mix(0.7 / 0.9, 1.0, uProc); }   // red: darker, alpha 0.7
@@ -576,7 +588,7 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
             else if (name == "Result") smoothstepF(0.6f, 1.0f, regrow)
             else if (name == "Disappear") fade * (1f - smoothstepF(0f, 0.6f, tE)) else fade
         // listening look eases in/out with the same 0.35 s constant
-        resK += ((if (name == "Result") 1f else 0f) - resK) * ease
+        resK += ((if (name == "Result" || name == "Disappear") 1f else 0f) - resK) * ease   // disappear keeps the result look: spill off
         listenK += ((if (name == "Listening") 1f else 0f) - listenK) * ease
         // Result: drops recover their colour right after the gather flash instead of regrowing as grey silhouettes
         val grey = if (name == "Result") proc * (1f - smoothstepF(0f, 0.15f, tE)) else -1f   // Result colourful from its start
