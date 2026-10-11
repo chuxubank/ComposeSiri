@@ -222,11 +222,11 @@ half4 main(float2 fc){
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         bend = mix(bend, (k == 3 || k == 5 || k == 6) ? 0.15 + 0.025 * (fk - 3.0) / 1.5 : 0.06 + 0.008 * fk, uIdle);   // r46: bow 0.06..0.1 // r65: blades bow 0.15-0.2
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
-        ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 1.0 : k == 0 ? 0.78 : (k == 1 ? 1.06 : (k == 2 ? 0.94 : (k == 3 ? 1.0 : (k == 4 ? 0.8125 : 1.0))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R
+        ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 1.0 : k == 0 ? 0.78 : (k == 1 ? 0.975 : (k == 2 ? 0.94 : (k == 3 ? 1.0 : (k == 4 ? 0.8125 : 1.0))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R // r67: big blue 0.78R
         offW += uIdle * (k == 7 ? 0.05 : k == 6 ? 0.05 : k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R // r51e
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         if (k == 2) offW += float3(0.0, 0.0, 0.25 * uIdle);   // r52: face-on red sits in front
-        if (!(k == 3 || k == 5 || k == 6)) { float oa = k == 0 ? 0.9 : (k == 1 ? -1.5708 : (k == 2 ? 2.356 : (k == 4 ? -0.35 : 3.6))); float od = k == 0 ? 0.18 : (k == 1 ? 0.17 : (k == 2 ? 0.2 : (k == 4 ? 0.18 : 0.15))); offW += uIdle * od * float3(cos(oa), sin(oa), 0.0); }   // r65: fill sheets centred off the orb centre (0.2-0.28R, spread: k0 upper-right, k1 down, k2 upper-left, k4 right, k7 left-down); blades k3/k5/k6 still cross the centre // r66: offsets 0.15-0.2R
+        if (!(k == 3 || k == 5 || k == 6)) { float oa = k == 0 ? 0.9 : (k == 1 ? -1.5708 : (k == 2 ? 2.356 : (k == 4 ? 0.3 : 3.6))); float od = k == 0 ? 0.18 : (k == 1 ? 0.17 : (k == 2 ? 0.2 : (k == 4 ? 0.2 : 0.15))); offW += uIdle * od * float3(cos(oa), sin(oa), 0.0); }   // r65: fill sheets centred off the orb centre (0.2-0.28R, spread: k0 upper-right, k1 down, k2 upper-left, k4 right, k7 left-down); blades k3/k5/k6 still cross the centre // r66: offsets 0.15-0.2R // r67: k4 to upper-right, away from big blue
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
         float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sizeI * sc) * 1.5;   // AA transition ~1.5 screen px
@@ -247,11 +247,11 @@ half4 main(float2 fc){
                     Q0 = Q1;
                 }
                 float dPx = dBest * pxPer;
-                float hw = mix(2.0, 1.5, uA);   // r66: core 3-4px
+                float hw = mix(4.0, 1.0, uA);   // r67: core 8px at centre -> 2px at tips
                 float cov = (1.0 - smoothstep(hw - 0.5, hw + 0.5, dPx)) * (1.0 - smoothstep(0.92, 1.0, uA)) * fade;
                 float rB = r / max(uScale, 0.05);
                 float bB = mix(2.5, 1.5, smoothstep(0.1, 0.25, rB)) * mix(1.0, 0.8, uA);
-                half3 cB = mix(half3(0.498, 0.902, 1.0), half3(1.0), half(1.0 - smoothstep(0.2, 0.35, rB))); // r62: white to 0.3R
+                half3 cB = mix(half3(0.498, 0.902, 1.0), half3(1.0), half(1.0 - smoothstep(0.15, 0.3, rB))); // r62: white to 0.3R
                 bladeAcc = max(bladeAcc, cB * half(bB * cov));
             }
             continue;
@@ -554,12 +554,12 @@ internal fun renderSheetStills(
         // r55 idle: blade soft glow = separate blade-only pass, 8px gaussian, PLUS back (no edge6 sampling)
         if (id > 0.5f) {
             val bladeImg = pass(0f, 0f, 1f)
-            val bPx = 10f * size / 870f   // r66: 10px glow
+            val bPx = 16f * size / 870f   // r67: 16px glow x0.6
             c.drawImage(bladeImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })   // r66: sharp core line
             c.drawImage(bladeImg, 0f, 0f, Paint().apply {   // r56: soft glow = 8px blur x0.5, tinted bright cyan
                 imageFilter = ImageFilter.makeBlur(bPx, bPx, FilterTileMode.DECAL)
                 colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
-                    0.083f, 0.083f, 0.083f, 0f, 0f, 0.150f, 0.150f, 0.150f, 0f, 0f, 0.167f, 0.167f, 0.167f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
+                    0.10f, 0.10f, 0.10f, 0f, 0f, 0.18f, 0.18f, 0.18f, 0f, 0f, 0.20f, 0.20f, 0.20f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
                 blendMode = BlendMode.PLUS
             })
         }
