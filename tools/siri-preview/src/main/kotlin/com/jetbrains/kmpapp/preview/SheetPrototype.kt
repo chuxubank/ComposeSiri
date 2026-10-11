@@ -333,7 +333,7 @@ half4 main(float2 fc){
                 float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
                 a = mix(a, aSilk, uIdle);
-                float corePx = abs(uv.y) * sheetHalfW(pos, ws) * abs(nW.z) / max(pxW / 1.5, 1e-6); float uAx = abs(2.0 * uv.x - 1.0); float coreHW = mix(2.0, 0.75, uAx); float coreK = smoothstep(0.75, 0.9, sideS) * (1.0 - smoothstep(coreHW - 0.5, coreHW + 0.25, corePx)); if (uBlade > 0.5) { a = coreK; bri = 1.5 * mix(1.3, 0.8, uAx); }   // r56: blade pass keeps only the projected spine of sheets with side > 0.85, <= 3 px wide // r57: soft side fade 0.75-0.9; width 4px at centre -> 1.5px at tips, brighter at centre
+                float corePx = abs(uv.y) * sheetHalfW(pos, ws) * abs(nW.z) / max(pxW / 1.5, 1e-6); float uAx = abs(2.0 * uv.x - 1.0); float coreHW = mix(2.0, 0.75, uAx); float coreK = smoothstep(0.75, 0.9, sideS) * (1.0 - smoothstep(coreHW - 0.5, coreHW + 0.25, corePx)); if (uBlade > 0.5) { a = coreK; bri = mix(2.0, 1.5, smoothstep(0.1, 0.25, rS)) * mix(1.0, 0.8, uAx); }   // r56: blade pass keeps only the projected spine of sheets with side > 0.85, <= 3 px wide // r57: soft side fade 0.75-0.9; width 4px at centre -> 1.5px at tips, brighter at centre // r58: core 2.0 within 0.1R, back to 1.5 by 0.25R
                 bri = min(bri, mix(1e3, 1.1, uRes));   // result: no fully white sheet bodies
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
                 float wR = mix(0.28, 0.12, uIdle);   // r37: white star radius 12% R
@@ -556,7 +556,7 @@ internal fun renderSheetStills(
         }
         // Wide soft glow ~0.5 R, strength ~0.35, fast falloff.
         run {
-            val g = mixF(0.15f, 2.0f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))   // r56: centre soft glow stronger (radius stays 0.16R) for ~4% white star // r57: idle strength 1.0 // r57b: idle strength 2.0 (cap) - 1.0 gave ~1.5% white
+            val g = mixF(0.15f, 1.0f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))   // r56: centre soft glow stronger (radius stays 0.16R) for ~4% white star // r57: idle strength 1.0 // r57b: idle strength 2.0 (cap) - 1.0 gave ~1.5% white // r58: back to 1.0
             if (g > 0.001f) {
                 // radial gradient instead of a mask-blurred circle (the blur produced a faint square box at small sizes)
                 val gs = (if (prm.coreScale >= 0f) prm.coreScale else 1f) * radius * mixF(0.5f, 0.16f, id)   // r55 idle: soft glow 0.16R
