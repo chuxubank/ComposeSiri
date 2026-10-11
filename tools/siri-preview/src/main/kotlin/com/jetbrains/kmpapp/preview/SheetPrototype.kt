@@ -65,7 +65,7 @@ float profile(float u){
 
 // r42 idle geometry: lens surface x=u*L, y=v*W0*sqrt(1-u^2), z=b*(u^2-0.3), 20 deg twist about the long axis; units = orb radius R
 float sheetSdfIdle(float3 p, float b, out float2 uv){
-    float L = 0.45; float W0 = 0.7;   // r49: full length 0.9R (L is half-length), W0 0.7R for cyan/blue faces
+    float L = 0.8; float W0 = 0.5;   // r50: half-length 0.8R (full 1.6R), W0 0.5R - slim ribbons
     float u = clamp(p.x / L, -1.0, 1.0);   // r45: centred lens
     float3 q = float3(p.x, p.y, p.z - b * (u*u - 0.3));
     float a = 0.1745 * u;
@@ -103,7 +103,7 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
 
 // half width (sheet units) at the point p: same parametrisation as sheetSdf
 float sheetHalfW(float3 p, float ws){
-    if (uIdle > 0.5) { float uI = clamp(p.x / ws / 0.45, -1.0, 1.0); return ws * 0.7 * pow(max(1.0 - uI*uI, 0.0), 1.2); }   // r49: match sheetSdfIdle   // r42 idle lens half width
+    if (uIdle > 0.5) { float uI = clamp(p.x / ws / 0.8, -1.0, 1.0); return ws * 0.5 * pow(max(1.0 - uI*uI, 0.0), 1.2); }   // r49: match sheetSdfIdle   // r42 idle lens half width   // r50
     float L = 1.05 * (1.0 - 0.3 * uListen);
     float u = clamp((p.x + L) / (2.0*L), 0.0, 1.0);
     return mix(profile(u), profile(0.5) * clamp(2.0 - 2.0 * abs(2.0*u - 1.0), 0.0, 1.0), uIdle) * 0.55 * ws;   // r41: same taper as sheetSdf
@@ -199,9 +199,9 @@ half4 main(float2 fc){
             float gam = k == 0 ? 0.2 : (k == 1 ? 1.3 : (k == 2 ? 2.4 : (k == 3 ? 0.75 : (k == 4 ? 1.85 : 2.95))));
             float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
             // r43c idle: long axis pitched 35..80 deg out of the screen plane, random azimuth (drift 3 deg/s); sheet rolls about its long axis <= 14 deg/s, phases staggered so 2-3 sheets are near edge-on (|n.v| < 0.3) at any time
-            float pitI = k == 0 ? 0.2094 : (k == 1 ? 0.1745 : (k == 2 ? 0.1745 : (k == 3 ? 1.1694 : (k == 4 ? 0.1745 : 1.1868))));   // r49: k0/k1 half-side (pitch 12/10), k2/k4 reds pitch 10, k3/k5 blades pitch 67/68
+            float pitI = k == 0 ? 0.2094 : (k == 1 ? 0.1745 : (k == 2 ? 0.1745 : (k == 3 ? 0.3491 : (k == 4 ? 0.1745 : 0.3054))));   // r50: blades k3/k5 pitch 20/17.5 deg so they project long (~0.75R)
             float psiI = (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 4.538 : (k == 3 ? 1.396 : (k == 4 ? 5.585 : 3.665))))) + 0.0524 * tI;   // r46: distinct azimuths for 6 sheets
-            float rolI = (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.56 : (k == 1 ? -0.49 : (k == 2 ? 0.52 : -0.52))) + 0.04 * sin(0.3 * tI + fk)) : ((k == 3 ? 1.0105 : 2.899) + (k == 3 ? -10.6 : 12.0) * (PI/180.0) * tI);   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6
+            float rolI = (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.56 : (k == 1 ? -0.49 : (k == 2 ? 0.52 : -0.52))) + 0.04 * sin(0.3 * tI + fk)) : ((k == 3 ? 1.5708 : -1.5708) + 0.26 * sin((k == 3 ? 0.35 : 0.28) * tI + fk));   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6 // r50: blades held edge-on (roll 90 +-15 deg, <=5 deg/s) -> always side-on > 0.75
             float3 lI = float3(cos(pitI) * cos(psiI), cos(pitI) * sin(psiI), sin(pitI));
             float3 m2I = normalize(cross(lI, float3(0.0, 0.0, 1.0)));
             float3 m1I = cross(m2I, lI);
@@ -220,7 +220,7 @@ half4 main(float2 fc){
         bend = mix(bend, 0.06 + 0.008 * fk, uIdle);   // r46: bow 0.06..0.1
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
         ws = mix(ws, (k == 0 ? 1.05 : (k == 1 ? 1.1 : (k == 2 ? 0.9 : (k == 3 ? 1.0 : (k == 4 ? 0.98 : 1.05))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98
-        offW += uIdle * (k == 0 ? 0.10 : (k == 1 ? -0.12 : (k == 2 ? 0.15 : (k == 3 ? -0.06 : (k == 4 ? 0.08 : -0.14))))) * (R * float3(1.0, 0.0, 0.0));   // r45b idle: shift along the long axis +-0.15R so sheets do not all cross at one point
+        offW += uIdle * (k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
@@ -247,7 +247,7 @@ half4 main(float2 fc){
         half4 col = half4(pow(baseC, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
         // analytic AA: near-miss within ~1 px still contributes with fractional coverage
-        if (!hit && minD < pxW && uPass < 0.5 && uProc < 0.01) { hit = true; tt = nearT; aaK = 1.0 - minD / pxW; }
+        if (!hit && minD < pxW * mix(1.0, 2.0, uIdle) && uPass < 0.5 && uProc < 0.01) { hit = true; tt = nearT; aaK = 1.0 - minD / (pxW * mix(1.0, 2.0, uIdle)); }   // r50m idle: wider near-miss window so edge-on blades are not dropped by the march (dotted white line).
         if (hit && (uListen > 0.01 || uIdle > 0.01)) {
             // refine the hit depth (stable depth order where petals intersect; removes notched intersection lines)
             for (int r2 = 0; r2 < 4; r2++) { float2 uvR; tt += sheetSdf(o + d*tt, twist, bend, ws, uvR) * 0.9; }
@@ -300,12 +300,13 @@ half4 main(float2 fc){
                 float whiteR = 1.0 - smoothstep(0.15, 0.55, rS);   // r46: white within 0.15R, fades out by ~0.55R
                 float sideP = mix(sideS, 1.0 - ndv, uIdle);   // r42 idle: side-on from the surface normal vs the view ray
                 float s4 = pow(clamp(sideP, 0.0, 1.0), 4.0);
-                float dEdgePx = (1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / max(pxW, 1e-6);   // r46: analytic distance to the sheet edge in pixels
-                float lineCore = 1.0 - smoothstep(0.0, 1.25, dEdgePx);   // r46: 2.5 px bright core
-                float lineSoft = exp(-(dEdgePx * dEdgePx) / 36.0);   // r46: 6 px same-colour soft glow
-                float edge6 = mix(lineSoft * 0.4, 1.0, lineCore) * smoothstep(0.6, 0.7, sideP);   // r46: only side-on sheets get the analytic bright line
+                float dEdgePx = (1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / max(pxW / 1.5, 1e-6);   // r46: analytic distance to the sheet edge in pixels   // r50e: pxW is 1.5 screen px, so divide by pxW/1.5 to get true pixels
+                float fwE = 1.0;   // r50e: Skia runtime SkSL has no fwidth/dFdx; dEdgePx is already in screen pixels (divided by pxW), so the AA width is a constant 1 px
+                float lineCore = 1.0 - smoothstep(2.0 - 0.5 * fwE, 2.0 + 0.5 * fwE, dEdgePx);   // r50e: fixed 2 px core, fwidth + smoothstep AA
+                float lineSoft = exp(-(dEdgePx * dEdgePx) / 12.5);   // r50e: ~5 px same-colour soft glow
+                float edge6 = mix(lineSoft * 0.4, 1.0, lineCore) * smoothstep(0.6, 0.7, sideS);   // r46: only side-on sheets get the analytic bright line   // r50d: gate the blade line by the whole-sheet side-on value; the per-pixel slab normal flips at every silhouette pixel and drew dotted white outlines on face-on sheets
                 bri *= mix(1.0, 1.0 + 3.0 * q1 * edge6 * whiteR, uIdle);   // r46: boost only the analytic edge line near the centre
-                bri *= mix(1.0, mix(0.8, 1.0, edge6), uIdle);   // r46 idle: sheet face x0.8, side-on edge line stays bright
+                bri *= mix(1.0, mix(0.8, 1.3, edge6), uIdle);   // r50b idle: sheet face x0.8, side-on blade line x1.3
                 a *= aaK * uBodyA;
                 // listening: inner edge coverage over ~1.5 px (distance to the petal edge in pixels)
                 float wE = sheetHalfW(pos, ws);
