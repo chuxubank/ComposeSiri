@@ -203,7 +203,7 @@ half4 main(float2 fc){
             float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
             // r43c idle: long axis pitched 35..80 deg out of the screen plane, random azimuth (drift 3 deg/s); sheet rolls about its long axis <= 14 deg/s, phases staggered so 2-3 sheets are near edge-on (|n.v| < 0.3) at any time
             float pitI = (k == 6 || k == 7) ? 0.1745 : k == 0 ? 0.2094 : (k == 1 ? 0.1745 : (k == 2 ? 0.1745 : (k == 3 ? 0.3491 : (k == 4 ? 0.1745 : 0.3054))));   // r50: blades k3/k5 pitch 20/17.5 deg so they project long (~0.75R) // r51e k6 pitch 10
-            float psiI = (k == 7 ? 1.0 : k == 6 ? 2.46 : (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 1.92 : (k == 3 ? 1.396 : (k == 4 ? 2.97 : 3.665)))))) + 0.2269 * tI;   // r51: azimuth drift 13 deg/s (was 3 deg/s; with rolls held, frames looked frozen) // r51e // r52: reds moved off the blue axes (lens axis repeats every 180 deg; 4.538/5.585 coincided with blues k3/k1) // r59: k6 axis ~60 deg from both other blades
+            float psiI = (k == 7 ? 1.0 : k == 6 ? 2.46 : (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 1.92 : (k == 3 ? 1.396 : (k == 4 ? 2.97 : 3.665)))))) + 0.2269 * tI; if (k == 4) psiI = 0.6 + 0.436 * sin(0.3 * tI);   // r68: k4 azimuth held upper-right +-25 deg, no global drift   // r51: azimuth drift 13 deg/s (was 3 deg/s; with rolls held, frames looked frozen) // r51e // r52: reds moved off the blue axes (lens axis repeats every 180 deg; 4.538/5.585 coincided with blues k3/k1) // r59: k6 axis ~60 deg from both other blades
             float rolI = (k == 7) ? (0.50 + 0.04 * sin(0.3 * tI + 7.0)) : (k == 6) ? (1.5708 + 0.08 * sin(0.32 * tI + 6.0)) : (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.56 : (k == 1 ? -0.49 : (k == 2 ? 0.25 : -0.52))) + 0.04 * sin(0.3 * tI + fk)) : ((k == 3 ? 1.5708 : -1.5708) + 0.08 * sin((k == 3 ? 0.35 : 0.28) * tI + fk));   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6 // r50: blades held edge-on (roll 90 +-15 deg, <=5 deg/s) -> always side-on > 0.75 // r51e k6 held ~31 deg off view // r52: red k2 near face-on (~14 deg) // r59: k6 becomes the 3rd edge-on blade (was half-side; only 2 sheets had side>0.75 in all 50 frames) // r60: blade roll +-15 deg -> +-4.6 deg; the +-15 deg roll pushed side below 0.9 so core lines faded (white drop after 1 s)
             float3 lI = float3(cos(pitI) * cos(psiI), cos(pitI) * sin(psiI), sin(pitI));
             float3 m2I = normalize(cross(lI, float3(0.0, 0.0, 1.0)));
@@ -226,7 +226,7 @@ half4 main(float2 fc){
         offW += uIdle * (k == 7 ? 0.05 : k == 6 ? 0.05 : k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R // r51e
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         if (k == 2) offW += float3(0.0, 0.0, 0.25 * uIdle);   // r52: face-on red sits in front
-        if (!(k == 3 || k == 5 || k == 6)) { float oa = k == 0 ? 0.9 : (k == 1 ? -1.5708 : (k == 2 ? 2.356 : (k == 4 ? 0.3 : 3.6))); float od = k == 0 ? 0.18 : (k == 1 ? 0.17 : (k == 2 ? 0.2 : (k == 4 ? 0.2 : 0.15))); offW += uIdle * od * float3(cos(oa), sin(oa), 0.0); }   // r65: fill sheets centred off the orb centre (0.2-0.28R, spread: k0 upper-right, k1 down, k2 upper-left, k4 right, k7 left-down); blades k3/k5/k6 still cross the centre // r66: offsets 0.15-0.2R // r67: k4 to upper-right, away from big blue
+        if (!(k == 3 || k == 5 || k == 6)) { float oa = k == 0 ? 0.9 : (k == 1 ? -1.5708 : (k == 2 ? 2.356 : (k == 4 ? 0.3 : 3.6))); float od = k == 0 ? 0.18 : (k == 1 ? 0.17 : (k == 2 ? 0.1 : (k == 4 ? 0.2 : 0.15))); offW += uIdle * od * float3(cos(oa), sin(oa), 0.0); }   // r65: fill sheets centred off the orb centre (0.2-0.28R, spread: k0 upper-right, k1 down, k2 upper-left, k4 right, k7 left-down); blades k3/k5/k6 still cross the centre // r66: offsets 0.15-0.2R // r67: k4 to upper-right, away from big blue // r68: only big red k2 offset cut (it reached 0.93R)
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
         float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sizeI * sc) * 1.5;   // AA transition ~1.5 screen px
@@ -234,7 +234,7 @@ half4 main(float2 fc){
             float fade = smoothstep(0.75, 0.9, sideS);
             if (fade > 0.001) {
                 float pxPer = 0.45 * uSize.x * uScale;
-                float dBest = 1e9; float uA = 1.0;
+                float dBest = 1e9; float uA = 1.0; float uS = 0.0;
                 float3 P0 = offW + R * (ws * float3(-0.8, 0.0, bend * 0.7));
                 float2 Q0 = 5.85 * P0.xy / (5.85 - P0.z);
                 for (int si = 1; si <= 12; si++) {   // r66: centreline follows the sheet bow (12 segments)
@@ -243,12 +243,13 @@ half4 main(float2 fc){
                     float2 Q1 = 5.85 * P1.xy / (5.85 - P1.z);
                     float2 ab = Q1 - Q0; float h = clamp(dot(p - Q0, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
                     float dd = length(p - (Q0 + ab * h));
-                    if (dd < dBest) { dBest = dd; uA = abs(-1.0 + 2.0 * (float(si) - 1.0 + h) / 12.0); }
+                    if (dd < dBest) { dBest = dd; uS = -1.0 + 2.0 * (float(si) - 1.0 + h) / 12.0; uA = abs(uS); }
                     Q0 = Q1;
                 }
                 float dPx = dBest * pxPer;
-                float hw = mix(4.0, 1.0, uA);   // r67: core 8px at centre -> 2px at tips
+                float hw = mix(9.0, 2.0, smoothstep(0.6, 1.0, uA));   // r68: 18px wide over 60% of the length, 4px at the tip
                 float cov = (1.0 - smoothstep(hw - 0.5, hw + 0.5, dPx)) * (1.0 - smoothstep(0.92, 1.0, uA)) * fade;
+                float keepS = (k == 5) ? -1.0 : 1.0; cov *= (uS * keepS > 0.0) ? 1.0 : (1.0 - smoothstep(0.1, 0.2, r / max(uScale, 0.05)));   // r68: keep one long half; the other half fades outside 0.1R (ribbon, not symmetric star)
                 float rB = r / max(uScale, 0.05);
                 float bB = mix(2.5, 1.5, smoothstep(0.1, 0.25, rB)) * mix(1.0, 0.8, uA);
                 half3 cB = mix(half3(0.498, 0.902, 1.0), half3(1.0), half(1.0 - smoothstep(0.15, 0.3, rB))); // r62: white to 0.3R
@@ -559,7 +560,7 @@ internal fun renderSheetStills(
             c.drawImage(bladeImg, 0f, 0f, Paint().apply {   // r56: soft glow = 8px blur x0.5, tinted bright cyan
                 imageFilter = ImageFilter.makeBlur(bPx, bPx, FilterTileMode.DECAL)
                 colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
-                    0.10f, 0.10f, 0.10f, 0f, 0f, 0.18f, 0.18f, 0.18f, 0f, 0f, 0.20f, 0.20f, 0.20f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
+                    0.15f, 0.15f, 0.15f, 0f, 0f, 0.27f, 0.27f, 0.27f, 0f, 0f, 0.30f, 0.30f, 0.30f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
                 blendMode = BlendMode.PLUS
             })
         }
