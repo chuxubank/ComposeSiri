@@ -222,29 +222,36 @@ half4 main(float2 fc){
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         bend = mix(bend, (k == 3 || k == 5 || k == 6) ? 0.15 + 0.025 * (fk - 3.0) / 1.5 : 0.06 + 0.008 * fk, uIdle);   // r46: bow 0.06..0.1 // r65: blades bow 0.15-0.2
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
-        ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 1.0 : k == 0 ? 0.78 : (k == 1 ? 1.06 : (k == 2 ? 0.94 : (k == 3 ? 1.0 : (k == 4 ? 0.7 : 1.0))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R
+        ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 1.0 : k == 0 ? 0.78 : (k == 1 ? 1.06 : (k == 2 ? 0.94 : (k == 3 ? 1.0 : (k == 4 ? 0.8125 : 1.0))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R
         offW += uIdle * (k == 7 ? 0.05 : k == 6 ? 0.05 : k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R // r51e
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         if (k == 2) offW += float3(0.0, 0.0, 0.25 * uIdle);   // r52: face-on red sits in front
-        if (!(k == 3 || k == 5 || k == 6)) { float oa = k == 0 ? 0.9 : (k == 1 ? -1.5708 : (k == 2 ? 2.356 : (k == 4 ? -0.35 : 3.6))); float od = k == 0 ? 0.25 : (k == 1 ? 0.22 : (k == 2 ? 0.25 : (k == 4 ? 0.28 : 0.2))); offW += uIdle * od * float3(cos(oa), sin(oa), 0.0); }   // r65: fill sheets centred off the orb centre (0.2-0.28R, spread: k0 upper-right, k1 down, k2 upper-left, k4 right, k7 left-down); blades k3/k5/k6 still cross the centre
+        if (!(k == 3 || k == 5 || k == 6)) { float oa = k == 0 ? 0.9 : (k == 1 ? -1.5708 : (k == 2 ? 2.356 : (k == 4 ? -0.35 : 3.6))); float od = k == 0 ? 0.18 : (k == 1 ? 0.17 : (k == 2 ? 0.2 : (k == 4 ? 0.18 : 0.15))); offW += uIdle * od * float3(cos(oa), sin(oa), 0.0); }   // r65: fill sheets centred off the orb centre (0.2-0.28R, spread: k0 upper-right, k1 down, k2 upper-left, k4 right, k7 left-down); blades k3/k5/k6 still cross the centre // r66: offsets 0.15-0.2R
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
         float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sizeI * sc) * 1.5;   // AA transition ~1.5 screen px
-        if (uBlade > 0.5 && uIdle > 0.5 && false) {   // r64: screen-space line layer disabled // r61: blade core = distance to the sheet's projected centreline in screen pixels (no ray hits -> no dotted lines)
+        if (uBlade > 0.5 && uIdle > 0.5) {   // r66: screen-space edge-glow line layer back on (curved) // r61: blade core = distance to the sheet's projected centreline in screen pixels (no ray hits -> no dotted lines)
             float fade = smoothstep(0.75, 0.9, sideS);
             if (fade > 0.001) {
-                float3 Lw = R * float3(0.8 * ws, 0.0, 0.0);
-                float3 A3 = offW - Lw; float3 B3 = offW + Lw;
-                float2 Ap = 5.85 * A3.xy / (5.85 - A3.z); float2 Bp = 5.85 * B3.xy / (5.85 - B3.z);
                 float pxPer = 0.45 * uSize.x * uScale;
-                float2 ab = Bp - Ap; float h = clamp(dot(p - Ap, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
-                float dPx = length(p - (Ap + ab * h)) * pxPer;
-                float uA = abs(2.0 * h - 1.0);
-                float hw = mix(2.0, 0.75, uA);
+                float dBest = 1e9; float uA = 1.0;
+                float3 P0 = offW + R * (ws * float3(-0.8, 0.0, bend * 0.7));
+                float2 Q0 = 5.85 * P0.xy / (5.85 - P0.z);
+                for (int si = 1; si <= 12; si++) {   // r66: centreline follows the sheet bow (12 segments)
+                    float uu = -1.0 + 2.0 * float(si) / 12.0;
+                    float3 P1 = offW + R * (ws * float3(0.8 * uu, 0.0, bend * (uu * uu - 0.3)));
+                    float2 Q1 = 5.85 * P1.xy / (5.85 - P1.z);
+                    float2 ab = Q1 - Q0; float h = clamp(dot(p - Q0, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+                    float dd = length(p - (Q0 + ab * h));
+                    if (dd < dBest) { dBest = dd; uA = abs(-1.0 + 2.0 * (float(si) - 1.0 + h) / 12.0); }
+                    Q0 = Q1;
+                }
+                float dPx = dBest * pxPer;
+                float hw = mix(2.0, 1.5, uA);   // r66: core 3-4px
                 float cov = (1.0 - smoothstep(hw - 0.5, hw + 0.5, dPx)) * (1.0 - smoothstep(0.92, 1.0, uA)) * fade;
                 float rB = r / max(uScale, 0.05);
                 float bB = mix(2.5, 1.5, smoothstep(0.1, 0.25, rB)) * mix(1.0, 0.8, uA);
-                half3 cB = mix(half3(0.498, 0.902, 1.0), half3(1.0), half(1.0 - smoothstep(0.3, 0.45, rB))); // r62: white to 0.3R
+                half3 cB = mix(half3(0.498, 0.902, 1.0), half3(1.0), half(1.0 - smoothstep(0.2, 0.35, rB))); // r62: white to 0.3R
                 bladeAcc = max(bladeAcc, cB * half(bB * cov));
             }
             continue;
@@ -321,7 +328,7 @@ half4 main(float2 fc){
                 float wf = smoothstep(mix(-0.08, -0.75, uIdle), mix(0.08, -0.35, uIdle), zw);   // r39 idle: only the far back gets depth blur, wide transition (no radial stripes)   // r38 idle: no hard radial cut at z=0 (fan-blade stripes)
                 if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
                 bri *= mix(1.0, mix(0.5, 1.0, wf), uIdle);   // r54: far-layer brightness 0.5
-                float dEdgeR = (1.0 - abs(uv.y)) * sheetHalfW(pos, ws); float faceShade = mix(1.0, 0.3, smoothstep(0.0, 0.12, dEdgeR)); bri *= mix(1.0, faceShade, uIdle);   // r54: face interior 0.45 rising to 1.0 within 0.08R of the contour; blades keep full // r55: interior 0.3, rim 1.0 over 0.12R // r56: side-on sheets also get face shading
+                float dEdgeR = (1.0 - abs(uv.y)) * sheetHalfW(pos, ws); float faceShade = mix(1.0, 0.4, smoothstep(0.0, 0.08, dEdgeR)); bri *= mix(1.0, faceShade, uIdle);   // r54: face interior 0.45 rising to 1.0 within 0.08R of the contour; blades keep full // r55: interior 0.3, rim 1.0 over 0.12R // r56: side-on sheets also get face shading // r66: 0.4 / 0.08R
                 float rS = r / max(uScale, 0.05);   // radius relative to orb size (small appear orb is not all 'centre')
                 float edgeOnly = mix(1.0, smoothstep(0.45, 0.95, abs(uv.y)), uRes);
                 float bR = mix(0.45, 0.12, uIdle);
@@ -335,7 +342,7 @@ half4 main(float2 fc){
                 float lineSoft = exp(-(dEdgePx * dEdgePx) / 32.0);   // r54: ~8 px same-colour soft glow
                 float edge6 = mix(lineSoft * 0.4, 1.0, lineCore) * smoothstep(0.6, 0.7, sideS) * (1.0 - uIdle);   // r46: only side-on sheets get the analytic bright line   // r50d: gate the blade line by the whole-sheet side-on value; the per-pixel slab normal flips at every silhouette pixel and drew dotted white outlines on face-on sheets // r52: idle off - the edge line keyed on distance-to-rim only fires on scattered ray hits along edge-on sheet silhouettes = the dotted white lines // r54: idle on again (8 px soft); min-slab 2.5 px keeps hits continuous // r55: idle off again (no dotted residual)
                 bri *= mix(1.0, 1.0 + 3.0 * q1 * edge6 * whiteR, uIdle);   // r46: boost only the analytic edge line near the centre
-                float bladeK = uIdle * smoothstep(0.7, 0.85, sideS);   // r64: side>0.7 sheet bodies mix toward cyan-white // r56: no whole-sheet blade whitening/boost in the main scene (core line lives in the blade pass)
+                float bladeK = 0.0;   // r64: side>0.7 sheet bodies mix toward cyan-white // r56: no whole-sheet blade whitening/boost in the main scene (core line lives in the blade pass) // r66: no white fill on blade bodies
                 a *= aaK * uBodyA;
                 // listening: inner edge coverage over ~1.5 px (distance to the petal edge in pixels)
                 float wE = sheetHalfW(pos, ws);
@@ -351,12 +358,12 @@ half4 main(float2 fc){
                 bri *= 1.0 + mix(0.8, 0.32, uIdle) * q1 * exp(-(rS/gR)*(rS/gR));                                   // idle: less circular centre wash
                 bri *= mix(1.0, mix(1.0, 0.7, smoothstep(0.7, 1.0, abs(uv.y))), q1);           // darker toward sheet boundaries
                 // idle silk: face-on ~0.38, side-on rim ~0.95; fade inward from bright edge; outer melts to black
-                float aOrient = mix(mix(0.5, (k == 2 ? 0.85 : 0.55), uIdle), 1.0, pow(clamp(sideP, 0.0, 1.0), 0.85));   // r53: face-on red opacity 0.85 // r64: face opacity 0.55 for all sheets // r65: face-on red back to 0.85
+                float aOrient = mix(mix(0.5, ((k == 2 || k == 4) ? 0.85 : 0.55), uIdle), 1.0, pow(clamp(sideP, 0.0, 1.0), 0.85));   // r53: face-on red opacity 0.85 // r64: face opacity 0.55 for all sheets // r65: face-on red back to 0.85 // r66: k4 0.85
                 float aInward = mix(mix(1.0, 0.22, pow(v, 0.6)), 1.0, uIdle);   // r51 idle: the one-sided fade made half of each lens ~invisible, so the visible shape was a half-lens cut along its straight centreline (the straight edges / hexagram outline)
                 float aEdge = mix(clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0), smoothstep(0.0, 0.04, (1.0 - abs(uv.y)) * sheetHalfW(pos, ws)), uIdle);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px // r64: outer feather 0.04R
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
                 a = mix(a, aSilk, uIdle);
-                a *= mix(1.0, 1.0 - smoothstep(0.965, 0.995, sideS), uIdle * (1.0 - uBlade));   // r62: near edge-on sheet bodies fade out in the main pass; their 2.5px slab was hit only by scattered rays (faint cyan dotted line) and the screen-space core line replaces them // r64: only the last few degrees fade (glow covers them)
+                a *= mix(1.0, 1.0 - smoothstep(0.85, 0.92, sideS), uIdle * (1.0 - uBlade));   // r62: near edge-on sheet bodies fade out in the main pass; their 2.5px slab was hit only by scattered rays (faint cyan dotted line) and the screen-space core line replaces them // r64: only the last few degrees fade (glow covers them) // r66: fade from 0.85
                 float corePx = abs(uv.y) * sheetHalfW(pos, ws) * abs(nW.z) / max(pxW / 1.5, 1e-6); float uAx = abs(2.0 * uv.x - 1.0); float coreHW = mix(2.0, 0.75, uAx) + uIdle * (1.0 - smoothstep(0.12, 0.18, rS)); float coreK = smoothstep(0.75, 0.9, sideS) * (1.0 - smoothstep(coreHW - 0.5, coreHW + 0.25, corePx)); if (uBlade > 0.5) { a *= smoothstep(0.7, 0.85, sideS); bri = 1.0; }   // r64: blade pass = side-on sheet bodies (for the soft glow) // r56: blade pass keeps only the projected spine of sheets with side > 0.85, <= 3 px wide // r57: soft side fade 0.75-0.9; width 4px at centre -> 1.5px at tips, brighter at centre // r58: core 2.0 within 0.1R, back to 1.5 by 0.25R // r59: centre 2.5 // r60: half width 3px within 0.15R
                 bri = min(bri, mix(1e3, 1.1, uRes));   // result: no fully white sheet bodies
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
@@ -402,7 +409,7 @@ half4 main(float2 fc){
             acc = c4.rgb * c4.a + acc * (1.0 - c4.a); accA = c4.a + accA * (1.0 - c4.a);
         }
     }
-    if (uBlade > 0.5 && uIdle > 0.5 && false) return half4(bladeAcc, 1);   // r64 disabled   // r61: blade pass output
+    if (uBlade > 0.5 && uIdle > 0.5) return half4(bladeAcc, 1);   // r66: line layer output re-enabled   // r61: blade pass output
     acc *= half(radial);
     if (uLayer > 0.5 && uBlend < 0.5) return half4(acc, accA * half(radial));   // premultiplied, for layer OVER
     return half4(acc, 1);
@@ -547,12 +554,12 @@ internal fun renderSheetStills(
         // r55 idle: blade soft glow = separate blade-only pass, 8px gaussian, PLUS back (no edge6 sampling)
         if (id > 0.5f) {
             val bladeImg = pass(0f, 0f, 1f)
-            val bPx = 11f * size / 870f   // r64: 11px glow
-            // r64: no sharp blade copy; bodies glow in the main pass
+            val bPx = 10f * size / 870f   // r66: 10px glow
+            c.drawImage(bladeImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })   // r66: sharp core line
             c.drawImage(bladeImg, 0f, 0f, Paint().apply {   // r56: soft glow = 8px blur x0.5, tinted bright cyan
                 imageFilter = ImageFilter.makeBlur(bPx, bPx, FilterTileMode.DECAL)
                 colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
-                    0.14f, 0.14f, 0.14f, 0f, 0f, 0.20f, 0.20f, 0.20f, 0f, 0f, 0.21f, 0.21f, 0.21f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
+                    0.083f, 0.083f, 0.083f, 0f, 0f, 0.150f, 0.150f, 0.150f, 0f, 0f, 0.167f, 0.167f, 0.167f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
                 blendMode = BlendMode.PLUS
             })
         }
