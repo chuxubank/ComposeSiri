@@ -172,6 +172,10 @@ half4 main(float2 fc){
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
         // analytic AA: near-miss within ~1 px still contributes with fractional coverage
         if (!hit && minD < pxW && uPass < 0.5 && uProc < 0.01) { hit = true; tt = nearT; aaK = 1.0 - minD / pxW; }
+        if (hit && uListen > 0.01) {
+            // refine the hit depth (stable depth order where petals intersect; removes notched intersection lines)
+            for (int r2 = 0; r2 < 4; r2++) { float2 uvR; tt += sheetSdf(o + d*tt, twist, bend, ws, uvR) * 0.9; }
+        }
         if (hit) {
             float3 pos = o + d*tt; float2 tmp;
             float e = 0.0012;
@@ -326,8 +330,11 @@ internal fun renderSheetStills(
         if (i < (System.getenv("SKIP") ?: "0").toInt()) continue   // resume a partial render
         if (i > (System.getenv("END") ?: "999999").toInt()) break
         fun pass(id: Float, layer: Float = 0f): org.jetbrains.skia.Image {
+            // listening: 2x2 supersampled body pass (clean petal edges), downsampled to size
+            val ss = 1   // 2x2 supersampling tried in r35: did not remove the petal notches, disabled (4x cost)
+            val sz = size * ss
             val b = RuntimeShaderBuilder(effect)
-            b.uniform("uSize", size.toFloat(), size.toFloat())
+            b.uniform("uSize", sz.toFloat(), sz.toFloat())
             b.uniform("uTime", t.toFloat())
             b.uniform("uCount", count.toFloat())
             b.uniform("uPass", id)
@@ -347,10 +354,16 @@ internal fun renderSheetStills(
             b.uniform("uListen", prm.listen)
             b.uniform("uBodyA", prm.bodyA)
             b.uniform("uRes", prm.res)
-            val surf = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
+            val surf = Surface.makeRaster(org.jetbrains.skia.ImageInfo(sz, sz, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
             surf.canvas.clear(if (layer > 0f) Color.TRANSPARENT else Color.BLACK)
             surf.canvas.drawPaint(Paint().apply { this.shader = b.makeShader() })
-            return surf.makeImageSnapshot()
+            if (ss == 1) return surf.makeImageSnapshot()
+            val big = surf.makeImageSnapshot()
+            val small = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
+            small.canvas.clear(if (layer > 0f) Color.TRANSPARENT else Color.BLACK)
+            small.canvas.drawImageRect(big, org.jetbrains.skia.Rect.makeWH(sz.toFloat(), sz.toFloat()), org.jetbrains.skia.Rect.makeWH(size.toFloat(), size.toFloat()),
+                org.jetbrains.skia.SamplingMode.LINEAR, Paint().apply { blendMode = BlendMode.SRC }, true)
+            return small.makeImageSnapshot()
         }
         val radius = size * 0.45f
         val cx = size / 2f
@@ -534,12 +547,12 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
         orbit = if (si >= 3) -(Math.PI * (t - starts[3])).toFloat() else 0f
         // staging: shape morph in place first, radial move ~0.2 s later
         val proc = when (name) {
-            "Processing" -> smoothstepF(0f, 0.7f, tE)
+            "Processing" -> smoothstepF(0f, 0.4f, tE)   // r35: 0.4 s morph
             "Result" -> 1f - smoothstepF(0.4f, 1.0f, tE)       // drops grow back after the gather
             else -> 0f
         }
         val move = when (name) {
-            "Processing" -> smoothstepF(0.1f, 0.8f, tE)
+            "Processing" -> smoothstepF(0.05f, 0.45f, tE)
             "Result" -> 1f - smoothstepF(0f, 0.4f, tE)          // gather to the centre first
             else -> 0f
         }
@@ -557,9 +570,9 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
                 // round 32: opacity rises with scale over 0.4 s; core held at 0.5 then full by 0.6 s; overshoot ~1.08 at 0.85 s
                 val e = smoothstepF(0.05f, 0.85f, tE)
                 val ov = 0.10f * kotlin.math.sin(Math.PI.toFloat() * smoothstepF(0.55f, 1.15f, tE))   // clearly visible ~1.08-1.1x at 0.85 s
-                scale = 0.06f + 0.94f * e + ov; tangle = 1f - e; fade = smoothstepF(0f, 0.1f, tE)
-                core = 0.5f + 0.5f * smoothstepF(0.4f, 0.6f, tE)
-                bodyA = smoothstepF(0f, 0.4f, tE)
+                scale = 0.06f + 0.94f * e + ov; tangle = (1f - e) * (1f - e);   // r35: unwind early, no fast spin near the idle handoff fade = smoothstepF(0f, 0.1f, tE)
+                core = 0.5f + 0.5f * smoothstepF(0.3f, 0.95f, tE)   // r35: spread ramp (was 0.4-0.6 s)
+                bodyA = smoothstepF(0f, 0.6f, tE)
                 coreScale = scale }   // core size follows the orb in appear only
             "Result" -> {
                 // reverse morph (1.0 s), then white flash 1.6 -> settle and spring bounce to ~1.08
@@ -574,10 +587,11 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
             "Disappear" -> {
                 // VJshi: shrink to a small bright dot over ~0.6 s, dot fades out by ~0.85 s
                 // round 31: settle to a full small coloured ball, main shrink only in the last ~0.25 s
-                val s1 = 1f - 0.4f * smoothstepF(0f, 0.5f, tE)
+                val s1 = 1f - 0.4f * smoothstepF(0f, 0.6f, tE)   // r35: gentler shrink start
                 val s2 = 1f - 0.9f * smoothstepF(0.65f, 0.9f, tE)
                 dScale = s1 * s2 - scale
-                fade = 1f - smoothstepF(0.85f, 0.97f, tE)
+                fade = 1f - smoothstepF(0.8f, 0.9f, tE)   // r35: fully 0 by the last frame
+                core = 1f - smoothstepF(0f, 0.85f, tE)   // r35: gentle core fade (exponential ease made a spike at the shrink start)
             }
         }
         val flash = if (name == "Result") 1.6f * kotlin.math.exp(-((tE - 0.4f) / 0.09f).let { it * it }) else 0f
@@ -591,7 +605,7 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
         resK += ((if (name == "Result" || name == "Disappear") 1f else 0f) - resK) * ease   // disappear keeps the result look: spill off
         listenK += ((if (name == "Listening") 1f else 0f) - listenK) * ease
         // Result: drops recover their colour right after the gather flash instead of regrowing as grey silhouettes
-        val grey = if (name == "Result") proc * (1f - smoothstepF(0f, 0.15f, tE)) else -1f   // Result colourful from its start
+        val grey = if (name == "Result") proc * (1f - smoothstepF(0f, 0.4f, tE)) else -1f   // r35: exit = reverse of the 0.4 s enter   // Result colourful from its start
         val edge = if (name == "Result") smoothstepF(0.4f, 0.8f, tE) * (1f - smoothstepF(2.2f, 3.0f, tE)) else 0f
         OrbParams(spinT, flip, (scale + dScale) * (1f + voice), (core + dCore) * (1f + voice), fade, sideOut, shell, proc, orbit, tangle, move, ring, gather, flash, grey, listenK, bodyA, edge, coreScale, resK)
     })
