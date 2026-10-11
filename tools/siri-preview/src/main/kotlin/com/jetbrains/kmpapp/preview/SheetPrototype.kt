@@ -243,7 +243,7 @@ half4 main(float2 fc){
                 float cov = (1.0 - smoothstep(hw - 0.5, hw + 0.5, dPx)) * (1.0 - smoothstep(0.92, 1.0, uA)) * fade;
                 float rB = r / max(uScale, 0.05);
                 float bB = mix(2.5, 1.5, smoothstep(0.1, 0.25, rB)) * mix(1.0, 0.8, uA);
-                half3 cB = mix(half3(0.498, 0.902, 1.0), half3(1.0), half(1.0 - smoothstep(0.15, 0.3, rB)));
+                half3 cB = mix(half3(0.498, 0.902, 1.0), half3(1.0), half(1.0 - smoothstep(0.3, 0.45, rB))); // r62: white to 0.3R
                 bladeAcc = max(bladeAcc, cB * half(bB * cov));
             }
             continue;
@@ -354,6 +354,7 @@ half4 main(float2 fc){
                 float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
                 a = mix(a, aSilk, uIdle);
+                a *= mix(1.0, 1.0 - smoothstep(0.9, 0.97, sideS), uIdle * (1.0 - uBlade));   // r62: near edge-on sheet bodies fade out in the main pass; their 2.5px slab was hit only by scattered rays (faint cyan dotted line) and the screen-space core line replaces them
                 float corePx = abs(uv.y) * sheetHalfW(pos, ws) * abs(nW.z) / max(pxW / 1.5, 1e-6); float uAx = abs(2.0 * uv.x - 1.0); float coreHW = mix(2.0, 0.75, uAx) + uIdle * (1.0 - smoothstep(0.12, 0.18, rS)); float coreK = smoothstep(0.75, 0.9, sideS) * (1.0 - smoothstep(coreHW - 0.5, coreHW + 0.25, corePx)); if (uBlade > 0.5) { a = coreK; bri = mix(2.5, 1.5, smoothstep(0.1, 0.25, rS)) * mix(1.0, 0.8, uAx); }   // r56: blade pass keeps only the projected spine of sheets with side > 0.85, <= 3 px wide // r57: soft side fade 0.75-0.9; width 4px at centre -> 1.5px at tips, brighter at centre // r58: core 2.0 within 0.1R, back to 1.5 by 0.25R // r59: centre 2.5 // r60: half width 3px within 0.15R
                 bri = min(bri, mix(1e3, 1.1, uRes));   // result: no fully white sheet bodies
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
