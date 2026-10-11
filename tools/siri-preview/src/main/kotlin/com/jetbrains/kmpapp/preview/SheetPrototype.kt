@@ -80,19 +80,19 @@ half4 sheetColor(int k){
     if (k == 2) return half4(0.831, 0.165, 0.208, 1); // red #D42A35
     if (k == 3) return half4(0.235, 0.784, 0.94, 1);  // cyan #3CC8F0
     if (k == 4) return half4(0.50, 0.10, 0.13, 1);    // darker red
-    return half4(0.07, 0.24, 0.62, 1);                // darker blue
+    return half4(0.05, 0.32, 0.20, 1);                // dark green lens
 }
 
 half4 main(float2 fc){
     float2 pS = (fc - 0.5*uSize) / (0.45*uSize.x);
-    float2 p = pS / (uScale * 0.9);   // sheets at 0.9 stay inside the glass   // ribbons fill the glass
+    float2 p = pS / (uScale * 0.8);   // sheets kept within ~0.85R   // sheets at 0.9 stay inside the glass   // ribbons fill the glass
     p.y = -p.y;
     float3 ro = float3(0, 0, 5.85);                  // camera 2700/461
     float3 rd = normalize(float3(p * (1.0/5.85) * 5.85 / 5.85, -1.0));
     rd = normalize(float3(p / 5.85, -1.0));
     half3 acc = half3(0); half accA = 0.0;
     float r = length(pS);
-    float radial = 1.0 - smoothstep(0.80, 0.97, r);
+    float radial = 1.0 - smoothstep(0.78, 0.88, r);
     float q1 = 1.0 - uProc;
     float starBoost = 1.0 + 3.0 * q1 * uSideK * exp(-(r/0.2)*(r/0.2));
     float dd6[6]; half4 cc6[6];
@@ -104,9 +104,9 @@ half4 main(float2 fc){
         // AE: time*45+value / -time*30+value deg/s, counter-rotating groups; wiggle(0.2,10/15)
         float spin = (mod(fk,2.0) < 0.5 ? 45.0 : -30.0) * PI/180.0;
         float wig = (sin(t*1.257 + fk*1.9) * 0.6 + sin(t*0.71 + fk*3.1) * 0.4) * uFlip;
-        float ws = k == 2 ? 1.25 : (k == 5 ? 0.8 : 1.0);   // red is the largest sheet
+        float ws = k == 1 ? 1.3 : (k == 2 ? 1.05 : (k == 5 ? 0.8 : 1.0));   // blue = largest central lens
         if (k >= 3) ws *= 0.85;
-        if (k == 0 || k == 3) ws *= 0.7;                    // green / cyan: thin slivers
+        if (k == 0) ws *= 0.7;                              // green: thin sliver (edge-on cyan back to 1.0x)
         // per-sheet X/Y/Z rates (deg/s), AE: time*30 / time*45 / -time*30 / -time*45
         float3 rate = k == 0 ? float3(30.0, -45.0, 30.0) : (k == 1 ? float3(-45.0, 30.0, -30.0) : (k == 2 ? float3(45.0, 30.0, -45.0)
                     : (k == 3 ? float3(-30.0, -45.0, 45.0) : (k == 4 ? float3(45.0, -30.0, 30.0) : float3(-45.0, 45.0, -30.0)))));
@@ -137,18 +137,23 @@ half4 main(float2 fc){
         float twist = (1.4 + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1;   // wiggle(0.2, ~15 deg)
         float bend = mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
+        float3 nW = R * float3(0, 0, 1);
+        float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
+        float pxW = 1.0 / (0.45 * uSize.x * uScale * 0.8 * sc) * 1.2;   // ~1 px in sheet units
         float3 o = Ri * ((ro - offW) / sc); float3 d = Ri * rd;
-        float tt = length(o) - 1.5; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0);
+        float tt = length(o) - 1.5; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0); float nearT = 0.0; float aaK = 1.0;
         for (int i = 0; i < 128; i++) {
             float3 pos = o + d*tt;
             float dd = sheetSdf(pos, twist, bend, ws, uv);
-            if (dd < minD) { minD = dd; nearUv = uv; }
+            if (dd < minD) { minD = dd; nearUv = uv; nearT = tt; }
             if (dd < 0.0005) { hit = true; break; }
             tt += max(dd * 0.4, 0.0012);
             if (tt > length(o) + 1.5) break;
         }
         half4 col = half4(pow(sheetColor(k).rgb, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uProc));   // desaturate to grey-white
+        // analytic AA: near-miss within ~1 px still contributes with fractional coverage
+        if (!hit && minD < pxW && uPass < 0.5) { hit = true; tt = nearT; aaK = 1.0 - minD / pxW; }
         if (hit) {
             float3 pos = o + d*tt; float2 tmp;
             float e = 0.0012;
@@ -174,7 +179,7 @@ half4 main(float2 fc){
             if (uPass < 0.5) {
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
-                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.8 * (0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 4.5 * uSideK * uSideK * pow(1.0 - ndv, 6.0) * exp(-(r/0.6)*(r/0.6)))) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
+                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.8 * (0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 0.0)) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
                 float a = 0.9 * (1.0 - smoothstep(0.97, 1.0, abs(uv.y))) * (0.75 + 0.25*centre) * fog;   // solid body, ~3% feather
                 // solid hard-edged oval with a slight soft edge
                 // feathered white disc -> soft oval when flat
@@ -185,6 +190,8 @@ half4 main(float2 fc){
                 float zw = (R * (pos * sc)).z + offW.z;
                 float wf = smoothstep(-0.08, 0.08, zw);
                 if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
+                bri *= 1.0 + 4.0 * q1 * sideS * sideS * exp(-(r/0.45)*(r/0.45));   // whole-sheet brightening when edge-on
+                a *= aaK;
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (uBlend > 0.5) {
                     half3 e = min(c4.rgb * c4.a, half3(1.0));
@@ -258,6 +265,16 @@ internal fun renderSheetStills(
             return half4(pow(x, half3(1.0 / 2.2)), 1);
         }
     """)
+    val spillFx = RuntimeEffect.makeForShader("""
+        uniform shader img; uniform float2 uSize; uniform float uK;
+        half4 main(float2 c) {
+            float r = length(c - 0.5*uSize) / (0.45*uSize.x);
+            half3 x = max(img.eval(c).rgb, half3(0));
+            half l = min(dot(x, half3(0.2126, 0.7152, 0.0722)) * 3.0, 1.0);
+            half w = half(uK * (1.0 - smoothstep(0.0, 0.3, r)));
+            return half4(half3(l * w), 1);
+        }
+    """)
     Files.createDirectories(outDir)
     val n = (fps * seconds).toInt().coerceAtLeast(1)
     for (i in 0 until n) {
@@ -309,18 +326,16 @@ internal fun renderSheetStills(
             imageFilter = ImageFilter.makeBlur(0.6f, 0.6f, FilterTileMode.DECAL)   // no extra soften on the front
             blendMode = BlendMode.PLUS
         })
-        // White spill along sheets near the centre (~30%).
-        c.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (0.8f * 77 * prm.sideK * prm.sideK * (1f - prm.move)).toInt().coerceIn(0, 255) })
-        c.drawImage(bodyImg, 0f, 0f, Paint().apply {
-            colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
-                0.33f, 0.33f, 0.33f, 0f, 0f, 0.33f, 0.33f, 0.33f, 0f, 0f,
-                0.33f, 0.33f, 0.33f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
-        })
-        c.drawCircle(cx, cx, radius * 0.26f * prm.sideK, Paint().apply {
-            blendMode = BlendMode.DST_IN
-            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.12f)
-        })
-        c.restore()
+        // White spill: pure white (luminance of sheet coverage only, no hue), Screen, falls to 0 by 0.3R.
+        run {
+            val k0 = ((System.getenv("SPILL") ?: "1").toFloat() * 0.3f * prm.sideK * prm.sideK * (1f - prm.move)).coerceAtLeast(0f)
+            if (k0 > 0.001f) {
+                val sb = RuntimeShaderBuilder(spillFx)
+                sb.child("img", bodyImg.makeShader())
+                sb.uniform("uSize", size.toFloat(), size.toFloat()); sb.uniform("uK", k0)
+                c.drawPaint(Paint().apply { shader = sb.makeShader(); blendMode = BlendMode.SCREEN })
+            }
+        }
         // HDR core (peak ~4): additive passes, halo ~15% radius.
         for ((r, sig, reps) in listOf(
             Triple(radius * 0.066f, radius * 0.048f, 1),   // core radius back to 1.0, intensity x1.3 (was 0.7)
