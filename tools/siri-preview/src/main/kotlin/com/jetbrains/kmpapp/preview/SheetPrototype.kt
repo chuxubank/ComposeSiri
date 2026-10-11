@@ -65,13 +65,13 @@ float profile(float u){
 
 // r42 idle geometry: lens surface x=u*L, y=v*W0*sqrt(1-u^2), z=b*(u^2-0.3), 20 deg twist about the long axis; units = orb radius R
 float sheetSdfIdle(float3 p, float b, out float2 uv){
-    float L = 0.85; float W0 = 0.4;   // r43
+    float L = 0.45; float W0 = 0.22;   // r44: full length 0.9R
     float u = clamp((p.x - L) / L, -1.0, 1.0);   // r43: lens shifted along its length so one tip sits at the centre
     float3 q = float3(p.x, p.y, p.z - b * (u*u - 0.3));
     float a = 0.1745 * u;
     float c = cos(a), s = sin(a);
     float2 yz = float2(c*q.y + s*q.z, -s*q.y + c*q.z);
-    float w = W0 * sqrt(max(1.0 - u*u, 0.0));
+    float w = W0 * pow(max(1.0 - u*u, 0.0), 0.9);   // r44 width (1-u^2)^0.9
     uv = float2(0.5 + 0.5*u, yz.x / max(w, 1e-4));
     float dz = abs(yz.y) - 0.004;
     float dy = abs(yz.x) - w;
@@ -103,7 +103,7 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
 
 // half width (sheet units) at the point p: same parametrisation as sheetSdf
 float sheetHalfW(float3 p, float ws){
-    if (uIdle > 0.5) { float uI = clamp((p.x / ws - 0.85) / 0.85, -1.0, 1.0); return ws * 0.4 * sqrt(max(1.0 - uI*uI, 0.0)); }   // r42 idle lens half width
+    if (uIdle > 0.5) { float uI = clamp((p.x / ws - 0.45) / 0.45, -1.0, 1.0); return ws * 0.22 * pow(max(1.0 - uI*uI, 0.0), 0.9); }   // r42 idle lens half width
     float L = 1.05 * (1.0 - 0.3 * uListen);
     float u = clamp((p.x + L) / (2.0*L), 0.0, 1.0);
     return mix(profile(u), profile(0.5) * clamp(2.0 - 2.0 * abs(2.0*u - 1.0), 0.0, 1.0), uIdle) * 0.55 * ws;   // r41: same taper as sheetSdf
@@ -301,7 +301,7 @@ half4 main(float2 fc){
                 float sideP = mix(sideS, 1.0 - ndv, uIdle);   // r42 idle: side-on from the surface normal vs the view ray
                 float s4 = pow(clamp(sideP, 0.0, 1.0), 4.0);
                 bri *= mix(1.0, (1.0 + 0.4 * (1.0 - v)) * (1.0 + edge6 * mix(0.5, 0.6 + 2.4 * s4, whiteR)), uIdle);
-                bri *= mix(1.0, mix(0.7, 1.0, edge6 * s4), uIdle);   // r43e idle: sheet face x0.7, only side-on bright edges stay bright
+                bri *= mix(1.0, mix(0.5, 1.0, edge6 * s4), uIdle);   // r44 idle: sheet face x0.5, only side-on bright edges stay bright
                 a *= aaK * uBodyA;
                 // listening: inner edge coverage over ~1.5 px (distance to the petal edge in pixels)
                 float wE = sheetHalfW(pos, ws);
@@ -327,6 +327,7 @@ half4 main(float2 fc){
                 float wR = mix(0.28, 0.12, uIdle);   // r37: white star radius 12% R
                 float wm = (1.0 - 0.6 * uListen) * mix(0.6, 1.0, uIdle) * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/wR)*(rS/wR)) * mix(1.0, mix(0.15, 1.0, 1.0 - v), uIdle);
                 wm = max(wm, uIdle * edge6 * s4 * whiteR);   // r41c idle: bright edge pure white within 0.3R
+                wm *= mix(1.0, smoothstep(0.6, 0.7, sideP), uIdle);   // r44 idle: white only where the surface is side-on (> 0.6); face-on stays its own colour even inside 0.3R
                 if (uDebug > 0.5) { wm = 0.0; col.rgb = (k == 0 || k == 5) ? half3(0,1,0) : ((k == 2 || k == 4) ? half3(1,0,0) : half3(0,0,1)); }
                 col.rgb = mix(col.rgb, half3(1.0), half(wm));
                 col.rgb = mix(col.rgb, mix(col.rgb, half3(1.0), half(0.55)), half(uIdle * edge6 * (1.0 - whiteR)));   // r41d idle: outer bright edge = light tint of the sheet colour (cyan -> ~#9FE8FF)
@@ -502,7 +503,7 @@ internal fun renderSheetStills(
         })
         // White spill: pure white (luminance of sheet coverage only, no hue), Screen, falls to 0 by 0.3R.
         run {
-            val k0 = ((System.getenv("SPILL") ?: "1").toFloat() * mixF(0.3f, 0.07f, id) * prm.sideK * prm.sideK * (1f - prm.move) * (1f - smoothstepF(0f, 0.03f, prm.proc)) * (1f - prm.res)).coerceAtLeast(0f)   // idle: shrink circular white spill
+            val k0 = ((System.getenv("SPILL") ?: "1").toFloat() * mixF(0.3f, 0f, id) * prm.sideK * prm.sideK * (1f - prm.move) * (1f - smoothstepF(0f, 0.03f, prm.proc)) * (1f - prm.res)).coerceAtLeast(0f)   // idle: shrink circular white spill   // r44 idle: no luminance white spill (white only from side-on edges)
             if (k0 > 0.001f) {
                 val sb = RuntimeShaderBuilder(spillFx)
                 sb.child("img", bodyImg.makeShader())
