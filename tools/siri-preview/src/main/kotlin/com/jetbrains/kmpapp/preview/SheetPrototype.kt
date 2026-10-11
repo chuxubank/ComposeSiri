@@ -65,7 +65,7 @@ float profile(float u){
 
 // r42 idle geometry: lens surface x=u*L, y=v*W0*sqrt(1-u^2), z=b*(u^2-0.3), 20 deg twist about the long axis; units = orb radius R
 float sheetSdfIdle(float3 p, float b, out float2 uv){
-    float L = 0.8; float W0 = 0.5;   // r50: half-length 0.8R (full 1.6R), W0 0.5R - slim ribbons
+    float L = 0.8; float W0 = 0.45;   // r51b: W0 0.45R
     float u = clamp(p.x / L, -1.0, 1.0);   // r45: centred lens
     float3 q = float3(p.x, p.y, p.z - b * (u*u - 0.3));
     float a = 0.1745 * u;
@@ -73,7 +73,7 @@ float sheetSdfIdle(float3 p, float b, out float2 uv){
     float2 yz = float2(c*q.y + s*q.z, -s*q.y + c*q.z);
     float w = W0 * pow(max(1.0 - u*u, 0.0), 1.2);   // r49: (1-u^2)^1.2, tips close to 0
     uv = float2(0.5 + 0.5*u, yz.x / max(w, 1e-4));
-    float dz = abs(yz.y) - 0.004;
+    float dz = abs(yz.y) - max(0.004, 1.25 / (0.45 * uSize.x * max(uScale, 0.05)));   // r51: slab at least 2.5 screen px thick so edge-on sheets are not dropped pixel by pixel (dotted lines)
     float dy = abs(yz.x) - w;
     float dx = abs(p.x) - L;
     return max(max(dz, dy), dx);
@@ -103,7 +103,7 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
 
 // half width (sheet units) at the point p: same parametrisation as sheetSdf
 float sheetHalfW(float3 p, float ws){
-    if (uIdle > 0.5) { float uI = clamp(p.x / ws / 0.8, -1.0, 1.0); return ws * 0.5 * pow(max(1.0 - uI*uI, 0.0), 1.2); }   // r49: match sheetSdfIdle   // r42 idle lens half width   // r50
+    if (uIdle > 0.5) { float uI = clamp(p.x / ws / 0.8, -1.0, 1.0); return ws * 0.45 * pow(max(1.0 - uI*uI, 0.0), 1.2); }   // r51b   // r49: match sheetSdfIdle   // r42 idle lens half width   // r50
     float L = 1.05 * (1.0 - 0.3 * uListen);
     float u = clamp((p.x + L) / (2.0*L), 0.0, 1.0);
     return mix(profile(u), profile(0.5) * clamp(2.0 - 2.0 * abs(2.0*u - 1.0), 0.0, 1.0), uIdle) * 0.55 * ws;   // r41: same taper as sheetSdf
@@ -134,11 +134,12 @@ half4 main(float2 fc){
     float radial = 1.0 - smoothstep(mix(rad0, 0.95, uIdle), mix(rad1, 1.0, uIdle), r);   // r42 idle: no radial opacity fade, lens shape closes the outline   // idle: melt into black before the glass rim
     float q1 = 1.0 - uProc;
     float starBoost = 1.0 + 3.0 * q1 * uSideK * exp(-(r/0.2)*(r/0.2));
-    float dd6[6]; half4 cc6[6];
-    for (int j = 0; j < 6; j++) { dd6[j] = -1.0; cc6[j] = half4(0); }
-    for (int k = 0; k < 6; k++) {
+    float dd6[7]; half4 cc6[7];   // r51c: up to 7 sheets (idle adds a half-side blue)
+    for (int j = 0; j < 7; j++) { dd6[j] = -1.0; cc6[j] = half4(0); }
+    for (int k = 0; k < 7; k++) {
         if (float(k) >= uCount) break;
         float fk = float(k);
+        if (k == 6 && uIdle < 0.5) break;   // r51c: 7th sheet is idle-only
         float t = uTime;
         // AE: time*45+value / -time*30+value deg/s, counter-rotating groups; wiggle(0.2,10/15)
         float spin = (mod(fk,2.0) < 0.5 ? 45.0 : -30.0) * PI/180.0;
@@ -199,9 +200,9 @@ half4 main(float2 fc){
             float gam = k == 0 ? 0.2 : (k == 1 ? 1.3 : (k == 2 ? 2.4 : (k == 3 ? 0.75 : (k == 4 ? 1.85 : 2.95))));
             float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
             // r43c idle: long axis pitched 35..80 deg out of the screen plane, random azimuth (drift 3 deg/s); sheet rolls about its long axis <= 14 deg/s, phases staggered so 2-3 sheets are near edge-on (|n.v| < 0.3) at any time
-            float pitI = k == 0 ? 0.2094 : (k == 1 ? 0.1745 : (k == 2 ? 0.1745 : (k == 3 ? 0.3491 : (k == 4 ? 0.1745 : 0.3054))));   // r50: blades k3/k5 pitch 20/17.5 deg so they project long (~0.75R)
-            float psiI = (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 4.538 : (k == 3 ? 1.396 : (k == 4 ? 5.585 : 3.665))))) + 0.0524 * tI;   // r46: distinct azimuths for 6 sheets
-            float rolI = (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.56 : (k == 1 ? -0.49 : (k == 2 ? 0.52 : -0.52))) + 0.04 * sin(0.3 * tI + fk)) : ((k == 3 ? 1.5708 : -1.5708) + 0.26 * sin((k == 3 ? 0.35 : 0.28) * tI + fk));   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6 // r50: blades held edge-on (roll 90 +-15 deg, <=5 deg/s) -> always side-on > 0.75
+            float pitI = k == 6 ? 0.1745 : k == 0 ? 0.2094 : (k == 1 ? 0.1745 : (k == 2 ? 0.1745 : (k == 3 ? 0.3491 : (k == 4 ? 0.1745 : 0.3054))));   // r50: blades k3/k5 pitch 20/17.5 deg so they project long (~0.75R) // r51e k6 pitch 10
+            float psiI = (k == 6 ? 1.0 : (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 4.538 : (k == 3 ? 1.396 : (k == 4 ? 5.585 : 3.665)))))) + 0.2269 * tI;   // r51: azimuth drift 13 deg/s (was 3 deg/s; with rolls held, frames looked frozen) // r51e
+            float rolI = (k == 6) ? (0.50 + 0.04 * sin(0.3 * tI + 6.0)) : (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.56 : (k == 1 ? -0.49 : (k == 2 ? 0.52 : -0.52))) + 0.04 * sin(0.3 * tI + fk)) : ((k == 3 ? 1.5708 : -1.5708) + 0.26 * sin((k == 3 ? 0.35 : 0.28) * tI + fk));   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6 // r50: blades held edge-on (roll 90 +-15 deg, <=5 deg/s) -> always side-on > 0.75 // r51e k6 held ~31 deg off view
             float3 lI = float3(cos(pitI) * cos(psiI), cos(pitI) * sin(psiI), sin(pitI));
             float3 m2I = normalize(cross(lI, float3(0.0, 0.0, 1.0)));
             float3 m1I = cross(m2I, lI);
@@ -219,8 +220,8 @@ half4 main(float2 fc){
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         bend = mix(bend, 0.06 + 0.008 * fk, uIdle);   // r46: bow 0.06..0.1
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
-        ws = mix(ws, (k == 0 ? 1.05 : (k == 1 ? 1.1 : (k == 2 ? 0.9 : (k == 3 ? 1.0 : (k == 4 ? 0.98 : 1.05))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98
-        offW += uIdle * (k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R
+        ws = mix(ws, (k == 6 ? 1.0 : k == 0 ? 1.05 : (k == 1 ? 1.1 : (k == 2 ? 0.9 : (k == 3 ? 1.0 : (k == 4 ? 0.98 : 1.05))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0
+        offW += uIdle * (k == 6 ? 0.05 : k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R // r51e
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
@@ -244,6 +245,7 @@ half4 main(float2 fc){
         if (k == 4) baseC = mix(baseC, half3(0.62, 0.17, 0.25), half(uIdle));
         if (uIdle > 0.5) { if (k == 3) baseC = half3(0.184, 0.42, 1.0); if (k == 4) baseC = half3(1.0, 0.176, 0.333); }   // r43d idle: second blue #2F6BFF and second red #FF2D55
         if (uIdle > 0.5 && k == 5) baseC = half3(0.235, 0.784, 0.94);   // r46: sixth sheet cyan #3CC8F0
+        if (uIdle > 0.5 && k == 6) baseC = half3(0.184, 0.42, 1.0);   // r51e: 7th sheet blue #2F6BFF
         half4 col = half4(pow(baseC, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
         // analytic AA: near-miss within ~1 px still contributes with fractional coverage
@@ -279,7 +281,7 @@ half4 main(float2 fc){
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
                 float rA = r / max(uScale, 0.05);
-                float briV = mix(mix(0.95, 0.3, v), mix(1.22, 0.30, pow(v, 0.55)), uIdle);
+                float briV = mix(mix(0.95, 0.3, v), mix(1.0, 0.75, abs(uv.y)), uIdle);   // r51 idle: symmetric across the width (was dark on one half)
                 float coreR = mix(0.13, 0.08, uIdle);
                 float coreTerm = mix(0.5, 0.20, uIdle) * uSideK * exp(-(rA/coreR)*(rA/coreR));
                 float bri = briV * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(rA/0.35)*(rA/0.35))) * (1.0 + 0.8 * (coreTerm + 0.0)) * mix(1.0 + mix(0.5, 1.25, uIdle) * fres, 1.0, uBlend);   // idle: stronger grazing sheen
@@ -293,6 +295,7 @@ half4 main(float2 fc){
                 float zw = (R * (pos * sc)).z + offW.z;
                 float wf = smoothstep(mix(-0.08, -0.75, uIdle), mix(0.08, -0.35, uIdle), zw);   // r39 idle: only the far back gets depth blur, wide transition (no radial stripes)   // r38 idle: no hard radial cut at z=0 (fan-blade stripes)
                 if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
+                bri *= mix(1.0, mix(0.6, 1.0, wf), uIdle);   // r51f idle depth: far (back-layer) sheets at 0.6 brightness
                 float rS = r / max(uScale, 0.05);   // radius relative to orb size (small appear orb is not all 'centre')
                 float edgeOnly = mix(1.0, smoothstep(0.45, 0.95, abs(uv.y)), uRes);
                 float bR = mix(0.45, 0.12, uIdle);
@@ -323,7 +326,7 @@ half4 main(float2 fc){
                 bri *= mix(1.0, mix(1.0, 0.7, smoothstep(0.7, 1.0, abs(uv.y))), q1);           // darker toward sheet boundaries
                 // idle silk: face-on ~0.38, side-on rim ~0.95; fade inward from bright edge; outer melts to black
                 float aOrient = mix(0.5, 1.0, pow(clamp(sideP, 0.0, 1.0), 0.85));   // r40: face-on opacity 0.5
-                float aInward = mix(1.0, 0.22, pow(v, 0.6));
+                float aInward = mix(mix(1.0, 0.22, pow(v, 0.6)), 1.0, uIdle);   // r51 idle: the one-sided fade made half of each lens ~invisible, so the visible shape was a half-lens cut along its straight centreline (the straight edges / hexagram outline)
                 float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
                 a = mix(a, aSilk, uIdle);
@@ -343,7 +346,7 @@ half4 main(float2 fc){
                     half3 e = min(c4.rgb * c4.a, half3(1.0));
                     acc = acc + e - acc * e;          // Screen
                 } else {
-                    for (int j = 0; j < 6; j++) { if (j == k) { dd6[j] = tt; cc6[j] = c4; } }
+                    for (int j = 0; j < 7; j++) { if (j == k) { dd6[j] = tt; cc6[j] = c4; } }
                 }
             } else {
                 // first hit only; far side attenuated by fog^2; tips fade radially
@@ -361,12 +364,12 @@ half4 main(float2 fc){
     }
     if (uPass < 0.5 && uBlend < 0.5) {
         // back-to-front OVER (largest ray distance first)
-        for (int s = 0; s < 6; s++) {
+        for (int s = 0; s < 7; s++) {
             float dm = -1.0; float bi = -1.0;
-            for (int j = 0; j < 6; j++) { if (dd6[j] > dm) { dm = dd6[j]; bi = float(j); } }
+            for (int j = 0; j < 7; j++) { if (dd6[j] > dm) { dm = dd6[j]; bi = float(j); } }
             if (dm < 0.0) break;
             half4 c4 = half4(0);
-            for (int j = 0; j < 6; j++) { if (float(j) == bi) { c4 = cc6[j]; dd6[j] = -1.0; } }
+            for (int j = 0; j < 7; j++) { if (float(j) == bi) { c4 = cc6[j]; dd6[j] = -1.0; } }
             acc = c4.rgb * c4.a + acc * (1.0 - c4.a); accA = c4.a + accA * (1.0 - c4.a);
         }
     }
@@ -492,7 +495,7 @@ internal fun renderSheetStills(
         val bodyImg = if (prm.proc < 0.99f) {
             val front = pass(0f, 1f); val backImg = pass(0f, 2f)
             val bs = f16(); bs.canvas.clear(Color.BLACK)
-            val bb = radius * mixF(0.04f, 0.015f, id) * (1f - prm.proc) + 0.01f   // r38 idle: lighter back blur
+            val bb = mixF(radius * 0.04f, 3f * size / 870f, id) * (1f - prm.proc) + 0.01f   // r51f idle: back-layer blur ~3 px
             bs.canvas.drawImage(backImg, 0f, 0f, Paint().apply { imageFilter = ImageFilter.makeBlur(bb, bb, FilterTileMode.DECAL); blendMode = BlendMode.PLUS })
             bs.canvas.drawImage(front, 0f, 0f, Paint().apply { blendMode = BlendMode.SRC_OVER })   // front sharp, OVER the blurred back
             bs.makeImageSnapshot()
