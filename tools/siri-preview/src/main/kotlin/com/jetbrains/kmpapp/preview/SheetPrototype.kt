@@ -65,8 +65,8 @@ float profile(float u){
 
 // r42 idle geometry: lens surface x=u*L, y=v*W0*sqrt(1-u^2), z=b*(u^2-0.3), 20 deg twist about the long axis; units = orb radius R
 float sheetSdfIdle(float3 p, float b, out float2 uv){
-    float L = 0.45; float W0 = 0.22;   // r44: full length 0.9R
-    float u = clamp((p.x - L) / L, -1.0, 1.0);   // r43: lens shifted along its length so one tip sits at the centre
+    float L = 0.7; float W0 = 0.32;   // r45: centred lens, full length 1.4R
+    float u = clamp(p.x / L, -1.0, 1.0);   // r45: centred lens
     float3 q = float3(p.x, p.y, p.z - b * (u*u - 0.3));
     float a = 0.1745 * u;
     float c = cos(a), s = sin(a);
@@ -75,7 +75,7 @@ float sheetSdfIdle(float3 p, float b, out float2 uv){
     uv = float2(0.5 + 0.5*u, yz.x / max(w, 1e-4));
     float dz = abs(yz.y) - 0.004;
     float dy = abs(yz.x) - w;
-    float dx = abs(p.x - L) - L;
+    float dx = abs(p.x) - L;
     return max(max(dz, dy), dx);
 }
 
@@ -103,7 +103,7 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
 
 // half width (sheet units) at the point p: same parametrisation as sheetSdf
 float sheetHalfW(float3 p, float ws){
-    if (uIdle > 0.5) { float uI = clamp((p.x / ws - 0.45) / 0.45, -1.0, 1.0); return ws * 0.22 * pow(max(1.0 - uI*uI, 0.0), 0.9); }   // r42 idle lens half width
+    if (uIdle > 0.5) { float uI = clamp(p.x / ws / 0.7, -1.0, 1.0); return ws * 0.32 * pow(max(1.0 - uI*uI, 0.0), 0.9); }   // r42 idle lens half width
     float L = 1.05 * (1.0 - 0.3 * uListen);
     float u = clamp((p.x + L) / (2.0*L), 0.0, 1.0);
     return mix(profile(u), profile(0.5) * clamp(2.0 - 2.0 * abs(2.0*u - 1.0), 0.0, 1.0), uIdle) * 0.55 * ws;   // r41: same taper as sheetSdf
@@ -200,9 +200,9 @@ half4 main(float2 fc){
             float gam = k == 0 ? 0.2 : (k == 1 ? 1.3 : (k == 2 ? 2.4 : (k == 3 ? 0.75 : (k == 4 ? 1.85 : 2.95))));
             float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
             // r43c idle: long axis pitched 35..80 deg out of the screen plane, random azimuth (drift 3 deg/s); sheet rolls about its long axis <= 14 deg/s, phases staggered so 2-3 sheets are near edge-on (|n.v| < 0.3) at any time
-            float pitI = k == 0 ? 1.2217 : (k == 1 ? 0.6981 : (k == 2 ? 1.0472 : (k == 3 ? 1.3614 : 0.8727)));
+            float pitI = k == 0 ? 0.5236 : (k == 1 ? 0.2618 : (k == 2 ? 0.6981 : (k == 3 ? 0.4363 : 0.7854)));   // r45c pitch 30/15/40/25/45 deg
             float psiI = (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 4.538 : (k == 3 ? 1.396 : 5.585)))) + 0.0524 * tI;
-            float rolI = (k == 0 ? 0.855 : (k == 1 ? 0.017 : (k == 2 ? 2.025 : (k == 3 ? 2.269 : 2.618)))) + (k == 0 ? 12.0 : (k == 1 ? -14.0 : (k == 2 ? 10.0 : (k == 3 ? -13.0 : 11.0)))) * (PI/180.0) * tI;
+            float rolI = (k == 0 ? 3.037 : (k == 1 ? 0.646 : (k == 2 ? 1.553 : (k == 3 ? 1.047 : 0.262)))) + (k == 0 ? -9.0 : (k == 1 ? 10.0 : (k == 2 ? 12.0 : (k == 3 ? 9.0 : 9.0)))) * (PI/180.0) * tI; // r45c phases re-searched: 2-3 sheets side-on > 0.6 at ~95% of times
             float3 lI = float3(cos(pitI) * cos(psiI), cos(pitI) * sin(psiI), sin(pitI));
             float3 m2I = normalize(cross(lI, float3(0.0, 0.0, 1.0)));
             float3 m1I = cross(m2I, lI);
@@ -219,7 +219,8 @@ half4 main(float2 fc){
         float bend = (1.0 - 0.6 * uListen) * mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         bend = mix(bend, 0.15 + 0.02 * fk, uIdle); offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
-        ws = mix(ws, (k == 0 ? 1.0 : (k == 1 ? 0.8 : (k == 2 ? 1.1 : (k == 3 ? 0.75 : 0.92)))), uIdle);   // r43b idle: fixed per-sheet size 0.7..1.1
+        ws = mix(ws, (k == 0 ? 0.95 : (k == 1 ? 1.1 : (k == 2 ? 0.88 : (k == 3 ? 1.0 : 0.82)))), uIdle);   // r45b idle: size 0.8..1.1, largest = blue (k1), reds 0.82/0.88
+        offW += uIdle * (k == 0 ? 0.10 : (k == 1 ? -0.12 : (k == 2 ? 0.15 : (k == 3 ? -0.06 : 0.08)))) * (R * float3(1.0, 0.0, 0.0));   // r45b idle: shift along the long axis +-0.15R so sheets do not all cross at one point
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
@@ -293,11 +294,12 @@ half4 main(float2 fc){
                 float rS = r / max(uScale, 0.05);   // radius relative to orb size (small appear orb is not all 'centre')
                 float edgeOnly = mix(1.0, smoothstep(0.45, 0.95, abs(uv.y)), uRes);
                 float bR = mix(0.45, 0.12, uIdle);
-                bri *= 1.0 + mix(2.5, 4.6, uIdle) * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/bR)*(rS/bR));   // idle: tighter star from side-on edges
+                bri *= 1.0 + mix(2.5, 4.6, uIdle) * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/bR)*(rS/bR)) * (1.0 - uIdle);   // idle: tighter star from side-on edges   // r45e idle: centre boost only on the edge line
                 float whiteR = 1.0 - smoothstep(0.3, 0.65, rS);   // r39: full to 0.3R, gone by 0.65R
                 float wPxN = pxW / max(2.0 * sheetHalfW(pos, ws), 1e-4);   // 1.5 px in v units
-                float wE6 = mix(0.06, wPxN / 3.0, smoothstep(0.0, 0.65, rS));   // r39: 6% at centre -> 0.5 px needle at 0.65R
-                float edge6 = 1.0 - smoothstep(0.0, max(wE6, wPxN / 3.0), v);
+                float wE6 = mix(0.06, wPxN * 0.8, smoothstep(0.0, 0.65, rS));   // r39: 6% at centre -> 0.5 px needle at 0.65R   // r45f: >= 1.2 px line, no broken 1px dots
+                float edge6 = 1.0 - smoothstep(0.0, max(wE6, wPxN * 0.8), v);
+                bri *= mix(1.0, 1.0 + 4.6 * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/bR)*(rS/bR)) * edge6, uIdle);   // r45e idle: centre boost only on the edge line
                 float sideP = mix(sideS, 1.0 - ndv, uIdle);   // r42 idle: side-on from the surface normal vs the view ray
                 float s4 = pow(clamp(sideP, 0.0, 1.0), 4.0);
                 bri *= mix(1.0, (1.0 + 0.4 * (1.0 - v)) * (1.0 + edge6 * mix(0.5, 0.6 + 2.4 * s4, whiteR)), uIdle);
@@ -327,7 +329,7 @@ half4 main(float2 fc){
                 float wR = mix(0.28, 0.12, uIdle);   // r37: white star radius 12% R
                 float wm = (1.0 - 0.6 * uListen) * mix(0.6, 1.0, uIdle) * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/wR)*(rS/wR)) * mix(1.0, mix(0.15, 1.0, 1.0 - v), uIdle);
                 wm = max(wm, uIdle * edge6 * s4 * whiteR);   // r41c idle: bright edge pure white within 0.3R
-                wm *= mix(1.0, smoothstep(0.6, 0.7, sideP), uIdle);   // r44 idle: white only where the surface is side-on (> 0.6); face-on stays its own colour even inside 0.3R
+                wm = mix(wm, edge6 * s4 * whiteR * smoothstep(0.6, 0.7, sideP), uIdle);   // r45d idle: white only on the thin bright edge line of side-on sheets (> 0.6), no white sheet faces
                 if (uDebug > 0.5) { wm = 0.0; col.rgb = (k == 0 || k == 5) ? half3(0,1,0) : ((k == 2 || k == 4) ? half3(1,0,0) : half3(0,0,1)); }
                 col.rgb = mix(col.rgb, half3(1.0), half(wm));
                 col.rgb = mix(col.rgb, mix(col.rgb, half3(1.0), half(0.55)), half(uIdle * edge6 * (1.0 - whiteR)));   // r41d idle: outer bright edge = light tint of the sheet colour (cyan -> ~#9FE8FF)
@@ -533,7 +535,7 @@ internal fun renderSheetStills(
             val g = mixF(0.15f, 0.04f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
             if (g > 0.001f) {
                 // radial gradient instead of a mask-blurred circle (the blur produced a faint square box at small sizes)
-                val gs = (if (prm.coreScale >= 0f) prm.coreScale else 1f) * radius * mixF(0.5f, 0.15f, id)   // r39: soft glow 0.15R
+                val gs = (if (prm.coreScale >= 0f) prm.coreScale else 1f) * radius * mixF(0.5f, 0.06f, id)   // r45g idle: tiny soft glow 0.06R
                 val gb = RuntimeShaderBuilder(glowFx)
                 gb.uniform("uC", cx, cx); gb.uniform("uR", gs); gb.uniform("uG", g)
                 c.drawPaint(Paint().apply { shader = gb.makeShader(); blendMode = BlendMode.PLUS })
@@ -560,7 +562,8 @@ internal fun renderSheetStills(
         val hotImg = hot.makeImageSnapshot()
         val out = f16()
         out.canvas.drawImage(sceneImg, 0f, 0f)
-        for ((sigma, alpha) in listOf(200f * k to 0.15f, 80f * k to 0.3f, 30f * k to 0.5f)) {
+        // r45g idle: no HDR bloom halo (it smeared the edge crossings into a white blob)
+        for ((sigma, alpha) in listOf(200f * k to 0.15f * (1f - id), 80f * k to 0.3f * (1f - id), 30f * k to 0.5f * (1f - id))) {
             out.canvas.drawImage(hotImg, 0f, 0f, Paint().apply {
                 imageFilter = ImageFilter.makeBlur(sigma, sigma, FilterTileMode.DECAL)
                 blendMode = BlendMode.PLUS
