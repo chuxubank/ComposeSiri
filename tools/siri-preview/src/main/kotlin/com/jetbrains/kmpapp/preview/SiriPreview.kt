@@ -70,6 +70,7 @@ fun main(args: Array<String>) {
             args[sheetIdx + 1].toInt(),
             (System.getenv("FPS") ?: "1").toDouble(),
             (System.getenv("SECONDS") ?: "12").toDouble(),
+            (System.getenv("SIZE") ?: "870").toInt(),
         )
         return
     }

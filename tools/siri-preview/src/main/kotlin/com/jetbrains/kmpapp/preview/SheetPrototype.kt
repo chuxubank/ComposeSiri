@@ -24,6 +24,8 @@ uniform float uTime;      // seconds
 uniform float uCount;     // number of sheets (1..4)
 uniform float uPass;      // 0 = body fill, 1 = rim
 uniform float uSpinT;     // integrated spin time (s): speed scale applied on CPU
+uniform float uK0Ph;     // r72: cyan k0 roll phase (preview env K0PH)
+uniform float3 uFPh;   // r72: extra roll phase for k2, k4, k7 (env FPH2/FPH4/FPH7)
 uniform float uFlip;      // drift/flip amplitude scale
 uniform float uScale;     // sheet scale
 uniform float uSideK;     // per-state core factor on the side-on boost
@@ -203,9 +205,10 @@ half4 main(float2 fc){
             float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
             // r43c idle: long axis pitched 35..80 deg out of the screen plane, random azimuth (drift 3 deg/s); sheet rolls about its long axis <= 14 deg/s, phases staggered so 2-3 sheets are near edge-on (|n.v| < 0.3) at any time
             float pitI = (k == 6 || k == 7) ? 0.1745 : k == 0 ? 0.2094 : (k == 1 ? 0.1745 : (k == 2 ? 0.1745 : (k == 3 ? 0.3491 : (k == 4 ? 0.1745 : 0.3054))));   // r50: blades k3/k5 pitch 20/17.5 deg so they project long (~0.75R) // r51e k6 pitch 10
-            float psiI = (k == 7 ? 1.0 : k == 6 ? 2.46 : (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 1.92 : (k == 3 ? 1.396 : (k == 4 ? 2.97 : 3.665)))))) + 1.0472 * tI;   // r71: one full turn per 6 s
+            float psiI = (k == 7 ? 1.0 : k == 6 ? 2.269 : (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 1.92 : (k == 3 ? 1.396 : (k == 4 ? 2.97 : 3.229)))))) + 1.0472 * tI;   // r71: one full turn per 6 s
+            psiI += (k == 3 ? 0.1745 * sin(1.0472 * tI) : (k == 5 ? 0.1745 * sin(2.0944 * tI + 1.0) : (k == 6 ? 0.1745 * sin(3.1416 * tI + 2.0) : 0.0)));   // r72: blades kept halves at ~0/105/230 deg, each wobbles +-10 deg with 6/3/2 s periods (seamless at 6 s)
             if (k == 4) psiI = 0.6 + 0.436 * sin(1.0472 * tI);   // r68: k4 azimuth held upper-right +-25 deg, no global drift   // r51: azimuth drift 13 deg/s (was 3 deg/s; with rolls held, frames looked frozen) // r51e // r52: reds moved off the blue axes (lens axis repeats every 180 deg; 4.538/5.585 coincided with blues k3/k1) // r59: k6 axis ~60 deg from both other blades
-            float rolI = (k == 7) ? (0.50 + 0.5236 * sin(1.0472 * tI + 7.0)) : (k == 6) ? (1.5708 + 0.08 * sin(1.0472 * tI + 6.0)) : (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.56 : (k == 1 ? -0.49 : (k == 2 ? 0.25 : -0.52))) + 0.5236 * sin(1.0472 * tI + fk * 1.7)) : ((k == 3 ? 1.5708 : -1.5708) + 0.08 * sin(1.0472 * tI + fk));   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6 // r50: blades held edge-on (roll 90 +-15 deg, <=5 deg/s) -> always side-on > 0.75 // r51e k6 held ~31 deg off view // r52: red k2 near face-on (~14 deg) // r59: k6 becomes the 3rd edge-on blade (was half-side; only 2 sheets had side>0.75 in all 50 frames) // r60: blade roll +-15 deg -> +-4.6 deg; the +-15 deg roll pushed side below 0.9 so core lines faded (white drop after 1 s) // r71: fill sheets roll +-30 deg per 6 s; blades keep +-4.6 deg so side stays >0.9 (no fade-out/dotted lines)
+            float rolI = (k == 7) ? (0.50 + 0.5236 * sin(1.0472 * tI + 7.0 + uFPh.z)) : (k == 6) ? (1.5708 + 0.08 * sin(1.0472 * tI + 6.0)) : (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.0 : (k == 1 ? -0.49 : (k == 2 ? 0.25 : -0.52))) + 0.5236 * sin(1.0472 * tI + fk * 1.7 + (k == 0 ? uK0Ph : (k == 2 ? uFPh.x : (k == 4 ? uFPh.y : 0.0))))) : ((k == 3 ? 1.5708 : -1.5708) + 0.08 * sin(1.0472 * tI + fk));   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6 // r50: blades held edge-on (roll 90 +-15 deg, <=5 deg/s) -> always side-on > 0.75 // r51e k6 held ~31 deg off view // r52: red k2 near face-on (~14 deg) // r59: k6 becomes the 3rd edge-on blade (was half-side; only 2 sheets had side>0.75 in all 50 frames) // r60: blade roll +-15 deg -> +-4.6 deg; the +-15 deg roll pushed side below 0.9 so core lines faded (white drop after 1 s) // r71: fill sheets roll +-30 deg per 6 s; blades keep +-4.6 deg so side stays >0.9 (no fade-out/dotted lines) // r72: cyan fill k0 rolls +-30 deg around face-on (phase +90 deg) so cyan never collapses
             float3 lI = float3(cos(pitI) * cos(psiI), cos(pitI) * sin(psiI), sin(pitI));
             float3 m2I = normalize(cross(lI, float3(0.0, 0.0, 1.0)));
             float3 m1I = cross(m2I, lI);
@@ -506,6 +509,8 @@ internal fun renderSheetStills(
             b.uniform("uCount", count.toFloat())
             b.uniform("uPass", id)
             b.uniform("uSpinT", prm.spinT)
+            b.uniform("uK0Ph", (System.getenv("K0PH") ?: "2.5").toFloat())
+            b.uniform("uFPh", (System.getenv("FPH2") ?: "0").toFloat(), (System.getenv("FPH4") ?: "0").toFloat(), (System.getenv("FPH7") ?: "3.1416").toFloat())
             b.uniform("uFlip", prm.flip)
             b.uniform("uScale", prm.scale)
             b.uniform("uSideK", prm.sideK)
