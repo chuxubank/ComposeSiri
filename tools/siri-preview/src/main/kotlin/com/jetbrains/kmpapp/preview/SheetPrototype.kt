@@ -77,7 +77,7 @@ half4 sheetColor(int k){
     // 4 main colours + 2 dimmer duplicates
     if (k == 0) return half4(0.18, 0.72, 0.525, 1);   // green #2EB886
     if (k == 1) return half4(0.118, 0.42, 1.0, 1);    // blue #1E6BFF
-    if (k == 2) return half4(0.831, 0.165, 0.208, 1); // red #D42A35
+    if (k == 2) return half4(0.722, 0.133, 0.180, 1); // red #B8222E
     if (k == 3) return half4(0.235, 0.784, 0.94, 1);  // cyan #3CC8F0
     if (k == 4) return half4(0.50, 0.10, 0.13, 1);    // darker red
     return half4(0.05, 0.32, 0.20, 1);                // dark green lens
@@ -137,9 +137,10 @@ half4 main(float2 fc){
         float twist = (1.4 + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1;   // wiggle(0.2, ~15 deg)
         float bend = mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
+        if (k == 1) offW += float3(0.0, 0.0, 0.1 * q1);   // blue sits ~0.1R toward the camera, mostly in front of red
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
-        float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sc) * 1.2;   // ~1 px in sheet units
+        float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sc) * 1.5;   // AA transition ~1.5 screen px
         float3 o = Ri * ((ro - offW) / sc); float3 d = Ri * rd;
         float tt = length(o) - 1.5; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0); float nearT = 0.0; float aaK = 1.0;
         for (int i = 0; i < 128; i++) {
@@ -192,6 +193,13 @@ half4 main(float2 fc){
                 if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
                 bri *= 1.0 + 4.0 * q1 * sideS * sideS * exp(-(r/0.45)*(r/0.45));   // whole-sheet brightening when edge-on
                 a *= aaK;
+                if (k == 2) { bri *= mix(0.8, 1.0, uProc); a *= mix(0.7 / 0.9, 1.0, uProc); }   // red: darker, alpha 0.7
+                bri *= 1.0 + 0.5 * q1 * exp(-(r/0.5)*(r/0.5));                                   // internal brightness gradient
+                // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
+                float wm = 0.85 * q1 * sideS * sideS * exp(-(r/0.4)*(r/0.4));
+                col.rgb = mix(col.rgb, half3(1.0), half(wm));
+                half lc = dot(col.rgb, half3(0.2126, 0.7152, 0.0722));
+                col.rgb = max(mix(half3(lc), col.rgb, half(mix(1.0, 1.0/1.3, wm))), half3(0));
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (uBlend > 0.5) {
                     half3 e = min(c4.rgb * c4.a, half3(1.0));
@@ -328,7 +336,7 @@ internal fun renderSheetStills(
         })
         // White spill: pure white (luminance of sheet coverage only, no hue), Screen, falls to 0 by 0.3R.
         run {
-            val k0 = ((System.getenv("SPILL") ?: "1").toFloat() * 0.3f * prm.sideK * prm.sideK * (1f - prm.move)).coerceAtLeast(0f)
+            val k0 = ((System.getenv("SPILL") ?: "1").toFloat() * 0.3f * prm.sideK * prm.sideK * (1f - prm.move) * (1f - smoothstepF(0f, 0.03f, prm.proc))).coerceAtLeast(0f)   // off in processing/result until regrown
             if (k0 > 0.001f) {
                 val sb = RuntimeShaderBuilder(spillFx)
                 sb.child("img", bodyImg.makeShader())
