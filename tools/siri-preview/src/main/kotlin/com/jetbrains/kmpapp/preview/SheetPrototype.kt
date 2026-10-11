@@ -121,7 +121,7 @@ half4 main(float2 fc){
         dlt = ang - tgt; dlt = dlt - 6.2831853 * floor((dlt + 3.14159265) / 6.2831853);
         ang = tgt + dlt * (1.0 - uProc);
         float dsz = k == 0 ? 0.7 : (k == 1 ? 0.85 : (k == 2 ? 1.0 : (k == 3 ? 1.0 : (k == 4 ? 1.15 : 1.3))));
-        float sc = mix(1.0, 0.095 * dsz, uProc);   // staggered drop sizes
+        float sc = mix(1.0, 0.133 * dsz, uProc);   // x1.4 longer   // staggered drop sizes
         float3 offW = uRing * uMove * float3(cos(slot), sin(slot), 0.0);
         float rimMul = k >= 4 ? 0.0 : 0.5;
         float3x3 R = rotZ(ang.z) * rotY(ang.y) * rotX(ang.x);
@@ -130,7 +130,7 @@ half4 main(float2 fc){
         float br = sin(6.2832*0.2*t + fk*2.1), br2 = sin(6.2832*0.2*t + fk*1.3 + 1.0);
         float twist = (1.4 + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1;   // wiggle(0.2, ~15 deg)
         float bend = mix(0.35 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.08 + 0.2*br2 + 0.9*uTangle, 0.15, uProc);   // keep ~15% bend: petal/crescent
-        ws = mix(ws, 0.8, uProc);   // chunkier petals
+        ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         float3 o = Ri * ((ro - offW) / sc); float3 d = Ri * rd;
         float tt = length(o) - 1.5; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0);
         for (int i = 0; i < 72; i++) {
@@ -143,7 +143,6 @@ half4 main(float2 fc){
         }
         half4 col = half4(pow(sheetColor(k).rgb, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uProc));   // desaturate to grey-white
-        col.rgb = mix(col.rgb, half3(1.0), half(uGather));
         if (hit) {
             float3 pos = o + d*tt; float2 tmp;
             float e = 0.002;
@@ -160,19 +159,21 @@ half4 main(float2 fc){
             // depth fog: far half fades to black (AE fog start 2700, range 1000)
             float z = (R * pos).z;
             float fog = pow(clamp(0.4 + 0.6*z/0.8, 0.0, 1.0), 1.6);   // stronger depth fade
-            fog = mix(fog, 1.0, uProc);
+            float front = smoothstep(-0.08, 0.12, z);                    // behind the sphere centre -> 0
+            fog = mix(fog * mix(0.3 / 0.4, 1.0, front), 1.0, uProc);    // back halves ~30%
+            float rimFront = mix(front, 1.0, uProc);
             float centre = 1.0 - smoothstep(0.15, 1.0, abs(2.0*uv.x - 1.0));
             float body = (0.18 + 0.82*centre) * (1.0 - fres) * (0.5 + 0.5*ring);
             float thinRim = pow(1.0 - ndv, 9.0);
             if (uPass < 0.5) {
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
-                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 3.0 * uSideK * uSideK * pow(1.0 - ndv, 2.0) * exp(-(r/0.20)*(r/0.20))) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
+                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.8 * (0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 3.0 * uSideK * uSideK * pow(1.0 - ndv, 2.0) * exp(-(r/0.20)*(r/0.20)))) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
                 float a = mix(0.95, 0.4, v) * (1.0 - smoothstep(0.85, 1.0, v)) * (0.6 + 0.4*centre) * fog;
                 // solid hard-edged oval with a slight soft edge
                 // feathered white disc -> soft oval when flat
                 float eo = 1.0 - smoothstep(0.93, 1.0, abs(uv.y));   // nearly hard edge
-                bri = mix(bri, 0.85, uProc) * (1.0 + 3.0 * uGather);
+                bri = mix(bri, 0.75, uProc) * (1.0 - 0.6 * uGather);   // grey-white, below the glow threshold when overlapping
                 a = mix(a, 0.9 * eo, uProc);
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (uBlend > 0.5) {
@@ -187,7 +188,7 @@ half4 main(float2 fc){
                 float edgeLine = 1.0 - smoothstep(0.0, 0.08, vE);
                 float rimK = edgeLine * (0.35 + 0.65 * pow(1.0 - ndv, 2.0)) * starBoost;
                 half3 bright = mix(min(col.rgb * 1.35 + half3(0.12), half3(1.0)), half3(1.0), half(clamp((starBoost - 1.0) / 3.0, 0.0, 1.0)));
-                acc += bright * half(rimMul * q1 * 0.7 * clamp(rimK * 2.2, 0.0, 5.0) * fog * fog * (1.0 - smoothstep(0.35, 0.75, r)));
+                acc += bright * half(rimFront * rimMul * q1 * 0.7 * clamp(rimK * 2.2, 0.0, 5.0) * fog * fog * (1.0 - smoothstep(0.35, 0.75, r)));
             }
         } else if (minD < 0.012) {
             // edge-on: sheet thinner than a pixel -> bright needle line
@@ -215,7 +216,7 @@ internal data class OrbParams(
     val spinT: Float, val flip: Float = 1f, val scale: Float = 1f, val core: Float = 1f, val fade: Float = 1f,
     val sideK: Float = 1f, val shell: Float = 1f,
     val proc: Float = 0f, val orbit: Float = 0f, val tangle: Float = 0f,
-    val move: Float = 0f, val ring: Float = 0.4f, val gather: Float = 0f,
+    val move: Float = 0f, val ring: Float = 0.4f, val gather: Float = 0f, val flash: Float = 0f,
 )
 
 internal fun renderSheetStills(
@@ -291,7 +292,7 @@ internal fun renderSheetStills(
         })
         c.drawImage(rimImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })
         // White spill along sheets near the centre (~30%).
-        c.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (77 * prm.sideK * prm.sideK * (1f - prm.move)).toInt().coerceIn(0, 255) })
+        c.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (0.8f * 77 * prm.sideK * prm.sideK * (1f - prm.move)).toInt().coerceIn(0, 255) })
         c.drawImage(bodyImg, 0f, 0f, Paint().apply {
             colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
                 0.33f, 0.33f, 0.33f, 0f, 0f, 0.33f, 0.33f, 0.33f, 0f, 0f,
@@ -308,7 +309,7 @@ internal fun renderSheetStills(
             Triple(radius * 0.06f, radius * 0.035f, 2),
             Triple(radius * 0.025f, radius * 0.01f, 4),
         )) {
-          val total = reps * prm.core * (1f - prm.move)
+          val total = 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
           var left = total
           while (left > 0.001f) {
             val a = left.coerceAtMost(1f); left -= a
@@ -318,6 +319,18 @@ internal fun renderSheetStills(
                 maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, sig)
             })
           }
+        }
+        // Gather flash: tiny centre core ~0.08 R, peak ~1.6
+        if (prm.flash > 0.01f) {
+            var left = prm.flash * 2.5f
+            while (left > 0.001f) {
+                val a = left.coerceAtMost(1f); left -= a
+                c.drawCircle(cx, cx, radius * 0.05f, Paint().apply {
+                    color = ((a * 255).toInt() shl 24) or 0xFFFFFF
+                    blendMode = BlendMode.PLUS
+                    maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.025f)
+                })
+            }
         }
         val sceneImg = scene.makeImageSnapshot()
         // 2) Threshold: keep HDR luminance above 1.0, then wide glows 0.15 / 0.3.
@@ -345,12 +358,14 @@ internal fun renderSheetStills(
         val fc = fin.canvas
         // Shell glow after tonemap: 30%, ring 0.85..1.0 only.
         // Interior base #2D2C32, feathered edge; outside stays black.
-        val discA = (0x59 + (0xA6 - 0x59) * prm.move) * prm.shell.coerceIn(0f, 1f)
-        val discR = radius * 0.96f * (1f + 0.6f * (prm.ring - 0.4f) * prm.move)
+        val discA = (0x59 + (0xD9 - 0x59) * prm.move) * prm.shell.coerceIn(0f, 1f)   // 85% in processing
+        val discR = radius * 0.96f + (1.7f * prm.ring * 0.9f * radius - radius * 0.96f) * prm.move   // follows ring at 1.7x
+        val dc = { a: Int, b: Int -> (a + (b - a) * prm.move).toInt() }
+        val discCol = (dc(0x2D, 0x1C) shl 16) or (dc(0x2C, 0x1C) shl 8) or dc(0x32, 0x1F)
         fc.drawCircle(cx, cx, discR, Paint().apply {
-            color = (discA.toInt().coerceIn(0, 255) shl 24) or 0x2D2C32
+            color = (discA.toInt().coerceIn(0, 255) shl 24) or discCol
             blendMode = BlendMode.PLUS
-            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.03f)
+            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.012f)   // feather < 3% R
         })
         fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (153 * (prm.shell * (1f - prm.move)).coerceIn(0f, 1f)).toInt() })
         fc.drawImage(bodyImg, 0f, 0f, Paint().apply {
@@ -369,14 +384,14 @@ internal fun renderSheetStills(
         fc.drawCircle(cx, cx, radius, Paint().apply {
             mode = org.jetbrains.skia.PaintMode.STROKE
             strokeWidth = 1.6f
-            color = ((0x50 * (prm.shell * (1f - prm.move)).coerceIn(0f, 1f)).toInt() shl 24) or 0x3FA8E0
+            color = ((0x90 * (prm.shell * (1f - prm.move)).coerceIn(0f, 1f)).toInt() shl 24) or 0x3FA8E0
             isAntiAlias = true
             maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, 1.5f)
         })
         fc.drawCircle(cx, cx, radius * 0.985f, Paint().apply {
             mode = org.jetbrains.skia.PaintMode.STROKE
             strokeWidth = radius * 0.02f
-            color = ((0x30 * (prm.shell * (1f - prm.move)).coerceIn(0f, 1f)).toInt() shl 24) or 0x8A4FD0
+            color = ((0x55 * (prm.shell * (1f - prm.move)).coerceIn(0f, 1f)).toInt() shl 24) or 0x8A4FD0
             isAntiAlias = true
             maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.012f)
         })
@@ -444,7 +459,6 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
                 // flash at the smallest (gathered) moment, then bounce as the orb regrows
                 val r = (tE - 0.4f).coerceAtLeast(0f)
                 if (tE >= 0.4f) {
-                    dCore = 0.5f * (1f - smoothstepF(0f, 0.4f, r))
                     val ex = kotlin.math.exp(-4f * r)
                     val sp = 1.0f + 0.04f * (1f - ex * kotlin.math.cos(8f * r)) + 0.1f * ex * kotlin.math.sin(8f * r)   // peak ~1.08, settles 1.04
                     dScale = sp - scale
@@ -455,8 +469,11 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
                 fade = if (tE < 0.82f) 1f else 0f
             }
         }
+        val flash = if (name == "Result") 1.6f * kotlin.math.exp(-((tE - 0.4f) / 0.09f).let { it * it }) else 0f
+        var sideOut = sideK
+        if (name == "Processing") { val k0 = 1f - smoothstepF(0f, 0.3f, tE); sideOut = sideK * k0; core *= k0 }
         val shell = if (name == "Disappear") fade * (1f - smoothstepF(0f, 0.6f, tE)) else fade
-        OrbParams(spinT, flip, (scale + dScale) * (1f + voice), (core + dCore) * (1f + voice), fade, sideK, shell, proc, orbit, tangle, move, ring, gather)
+        OrbParams(spinT, flip, (scale + dScale) * (1f + voice), (core + dCore) * (1f + voice), fade, sideOut, shell, proc, orbit, tangle, move, ring, gather, flash)
     })
     Files.writeString(outDir.resolve("labels.txt"), labels.toString())
 }
