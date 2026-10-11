@@ -117,6 +117,8 @@ half4 main(float2 fc){
         if (k == 3 || k == 4) ang.x = 1.5708 + 0.22 * sin(t * 0.6 + fk) + (k == 4 ? 3.1416 : 0.0);
         // blue: limit flip so its normal stays within ~50 deg of the view (|x|,|y| tilt <= 0.6 rad)
         if (k == 1) { ang.x = 0.6 * sin(ang.x); ang.y = 0.6 * sin(ang.y); }
+        // other non-edge-on sheets: tilt <= 1 rad per axis -> side <= 0.71, so only cyan/dark-red exceed 0.8
+        if (k == 0 || k == 2 || k == 5) { ang.x = sin(ang.x); ang.y = sin(ang.y); }
         float tg = uTangle * (k == 1 ? -1.0 : 1.0);
         ang += float3(2.4, -1.9, 3.1) * tg;
         // processing: all sheets share one in-plane orientation, face the camera, orbit together
@@ -196,6 +198,7 @@ half4 main(float2 fc){
                 bri *= 1.0 + 2.5 * q1 * pow(sideS, 4.0) * exp(-(r/0.45)*(r/0.45));   // whole-sheet brightening when edge-on
                 a *= aaK;
                 if (k == 2) { bri *= mix(0.8, 1.0, uProc); a *= mix(0.7 / 0.9, 1.0, uProc); }   // red: darker, alpha 0.7
+                bri *= mix(1.0, mix(1.0, 0.5, smoothstep(0.6, 0.9, sideS) * (1.0 - wf)), q1);   // edge-on sheets behind centre x0.5
                 bri *= 1.0 + 0.8 * q1 * exp(-(r/0.5)*(r/0.5));                                   // internal brightness gradient
                 bri *= mix(1.0, mix(1.0, 0.7, smoothstep(0.7, 1.0, abs(uv.y))), q1);           // darker toward sheet boundaries
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
@@ -450,7 +453,7 @@ internal fun renderSheetStills(
 }
 
 /** Six-state demo in the preview: eased params per state, synthetic voice envelope. */
-internal val SheetDemoStates = listOf("Appear" to 1.5, "Idle" to 6.0, "Listening" to 2.5, "Processing" to 3.0, "Result" to 3.0, "Disappear" to 1.5)
+internal val SheetDemoStates = listOf("Appear" to 1.0, "Idle" to 6.0, "Listening" to 2.5, "Processing" to 3.0, "Result" to 3.0, "Disappear" to 1.0)
 
 internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
     data class Target(val speed: Float, val flip: Float, val scale: Float, val core: Float)
@@ -475,13 +478,16 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
         val sideT = when (name) { "Listening" -> 1.0625f; "Processing" -> 0.9375f; "Result" -> 1.375f; else -> 1.25f }
         sideK += (sideT - sideK) * ease
         val voice = if (name == "Listening") {
+            // VJshi: orb swells up to ~1.25x on loud syllables, never shrinks below rest size
             val syl = kotlin.math.abs(kotlin.math.sin(t * 12.6)).toFloat()
             val phrase = (0.5 + 0.5 * kotlin.math.sin(t * 2.1)).toFloat()
-            (syl * phrase - 0.5f) * 0.4f
+            val inn = smoothstepF(0f, 0.3f, tE) * (1f - smoothstepF(2.2f, 2.5f, tE))
+            0.25f * syl * phrase * inn
         } else 0f
-        val burst = (voice - 0.1f).coerceAtLeast(0f) * 30f     // spin bursts on voice peaks
+        val burst = (voice - 0.12f).coerceAtLeast(0f) * 20f     // spin bursts on voice peaks
         spinT += (speed + burst) * dt
-        orbit -= (2.0 * Math.PI * 0.5).toFloat() * dt   // constant clockwise group spin
+        // ring angle uses state-local time: 0 when Processing is entered, continues through Result
+        orbit = if (si >= 3) -(Math.PI * (t - starts[3])).toFloat() else 0f
         // staging: shape morph in place first, radial move ~0.2 s later
         val proc = when (name) {
             "Processing" -> smoothstepF(0f, 0.7f, tE)
@@ -502,7 +508,9 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
         labels.append("$i $name\n")
         var dScale = 0f; var dCore = 0f; var fade = 1f; var tangle = 0f
         when (name) {
-            "Appear" -> { val e = smoothstepF(0f, 1f, tE); scale = e; tangle = 1f - e; fade = smoothstepF(0f, 0.4f, tE); core = e }
+            "Appear" -> {   // VJshi: dot -> full orb in ~0.6 s with a small overshoot, then settle by ~0.9 s
+                val e = smoothstepF(0f, 0.6f, tE); val ov = 0.06f * kotlin.math.sin(Math.PI.toFloat() * smoothstepF(0.4f, 0.9f, tE))
+                scale = 0.08f + 0.92f * e + ov; tangle = 1f - e; fade = smoothstepF(0f, 0.15f, tE); core = 0.6f + 0.4f * e }
             "Result" -> {
                 // reverse morph (1.0 s), then white flash 1.6 -> settle and spring bounce to ~1.08
                 // flash at the smallest (gathered) moment, then bounce as the orb regrows
@@ -514,8 +522,11 @@ internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
                 }
             }
             "Disappear" -> {
-                dCore = (1f - kotlin.math.abs(tE - 0.76f) / 0.06f).coerceIn(0f, 1f) * 1.6f
-                fade = if (tE < 0.82f) 1f else 0f
+                // VJshi: shrink to a small bright dot over ~0.6 s, dot fades out by ~0.85 s
+                val e = smoothstepF(0f, 0.6f, tE)
+                dScale = (1f - 0.9f * e) - scale
+                dCore = 0.6f * e
+                fade = 1f - smoothstepF(0.6f, 0.85f, tE)
             }
         }
         val flash = if (name == "Result") 1.6f * kotlin.math.exp(-((tE - 0.4f) / 0.09f).let { it * it }) else 0f
