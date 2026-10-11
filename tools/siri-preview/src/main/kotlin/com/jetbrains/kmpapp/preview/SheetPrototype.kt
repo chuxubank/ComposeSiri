@@ -69,13 +69,13 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
     float u = (p.x + L) / (2.0*L);
     // bend: centreline arcs in y, centred
     float xs = p.x / L;
-    float yc = bend * (xs*xs - mix(0.33, 0.0, uIdle));   // r37 idle: edge-on rims cross the exact centre
+    float yc = bend * (xs*xs - mix(0.33, 0.0, uIdle)) + uIdle * 0.233 * L * xs * abs(xs);   // r37 idle: edge-on rims cross the exact centre   // r41 idle: tips swept tangentially ~25 deg (S-curve)
     float3 q = float3(p.x, p.y - yc, p.z);
     // twist around the long axis
     float a = twist * (u - 0.5);
     float c = cos(a), s = sin(a);
     float2 yz = float2(c*q.y + s*q.z, -s*q.y + c*q.z);
-    float w = profile(clamp(u,0.0,1.0)) * 0.55 * ws;   // half width (shell radii)
+    float w = mix(profile(clamp(u,0.0,1.0)), profile(0.5) * clamp(2.0 - 2.0 * abs(2.0*u - 1.0), 0.0, 1.0), uIdle) * 0.55 * ws;   // half width (shell radii)   // r41 idle: width tapers linearly from mid-sheet to 0 at the tips
     uv = float2(u, yz.x / max(w, 1e-4));
     float vv = clamp(yz.x / max(w, 1e-4), -1.0, 1.0);
     float dz = abs(yz.y - 0.18 * w * vv * vv) - 0.004;
@@ -88,7 +88,7 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
 float sheetHalfW(float3 p, float ws){
     float L = 1.05 * (1.0 - 0.3 * uListen);
     float u = clamp((p.x + L) / (2.0*L), 0.0, 1.0);
-    return profile(u) * 0.55 * ws;
+    return mix(profile(u), profile(0.5) * clamp(2.0 - 2.0 * abs(2.0*u - 1.0), 0.0, 1.0), uIdle) * 0.55 * ws;   // r41: same taper as sheetSdf
 }
 
 half4 sheetColor(int k){
@@ -270,6 +270,7 @@ half4 main(float2 fc){
                 float edge6 = 1.0 - smoothstep(0.0, max(wE6, wPxN / 3.0), v);
                 float s4 = pow(clamp(sideS, 0.0, 1.0), 4.0);
                 bri *= mix(1.0, (1.0 + 0.4 * (1.0 - v)) * (1.0 + edge6 * mix(0.5, 0.6 + 2.4 * s4, whiteR)), uIdle);
+                bri *= mix(1.0, mix(0.4, 1.0, edge6 * s4), uIdle);   // r41b idle: sheet face x0.4, only side-on bright edges stay bright
                 a *= aaK * uBodyA;
                 // listening: inner edge coverage over ~1.5 px (distance to the petal edge in pixels)
                 float wE = sheetHalfW(pos, ws);
@@ -288,15 +289,16 @@ half4 main(float2 fc){
                 float aOrient = mix(0.5, 1.0, pow(clamp(sideS, 0.0, 1.0), 0.85));   // r40: face-on opacity 0.5
                 float aInward = mix(1.0, 0.22, pow(v, 0.6));
                 float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px
-                float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;
+                float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA * (1.0 - smoothstep(0.45, 0.7, rS));   // r41 idle: opacity full to 0.45R, smoothstep to 0 by 0.7R
                 a = mix(a, aSilk, uIdle);
                 bri = min(bri, mix(1e3, 1.1, uRes));   // result: no fully white sheet bodies
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
                 float wR = mix(0.28, 0.12, uIdle);   // r37: white star radius 12% R
                 float wm = (1.0 - 0.6 * uListen) * mix(0.6, 1.0, uIdle) * q1 * edgeOnly * pow(sideS, 4.0) * exp(-(rS/wR)*(rS/wR)) * mix(1.0, mix(0.15, 1.0, 1.0 - v), uIdle);
-                wm = max(wm, 0.6 * uIdle * edge6 * s4 * whiteR);   // r38: white only within 0.45R
+                wm = max(wm, uIdle * edge6 * s4 * whiteR);   // r41c idle: bright edge pure white within 0.3R
                 if (uDebug > 0.5) { wm = 0.0; col.rgb = (k == 0 || k == 5) ? half3(0,1,0) : ((k == 2 || k == 4) ? half3(1,0,0) : half3(0,0,1)); }
                 col.rgb = mix(col.rgb, half3(1.0), half(wm));
+                col.rgb = mix(col.rgb, mix(col.rgb, half3(1.0), half(0.55)), half(uIdle * edge6 * (1.0 - whiteR)));   // r41d idle: outer bright edge = light tint of the sheet colour (cyan -> ~#9FE8FF)
                 half lc = dot(col.rgb, half3(0.2126, 0.7152, 0.0722));
                 col.rgb = max(mix(half3(lc), col.rgb, half(mix(1.0, 1.0/1.3, wm))), half3(0));
                 half4 c4 = half4(col.rgb * half(bri), half(a));
