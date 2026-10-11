@@ -298,7 +298,7 @@ half4 main(float2 fc){
                 float wf = smoothstep(mix(-0.08, -0.75, uIdle), mix(0.08, -0.35, uIdle), zw);   // r39 idle: only the far back gets depth blur, wide transition (no radial stripes)   // r38 idle: no hard radial cut at z=0 (fan-blade stripes)
                 if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
                 bri *= mix(1.0, mix(0.5, 1.0, wf), uIdle);   // r54: far-layer brightness 0.5
-                float dEdgeR = (1.0 - abs(uv.y)) * sheetHalfW(pos, ws); float faceShade = mix(1.0, 0.3, smoothstep(0.0, 0.12, dEdgeR)); bri *= mix(1.0, mix(faceShade, 1.0, smoothstep(0.55, 0.7, sideS)), uIdle);   // r54: face interior 0.45 rising to 1.0 within 0.08R of the contour; blades keep full // r55: interior 0.3, rim 1.0 over 0.12R
+                float dEdgeR = (1.0 - abs(uv.y)) * sheetHalfW(pos, ws); float faceShade = mix(1.0, 0.3, smoothstep(0.0, 0.12, dEdgeR)); bri *= mix(1.0, faceShade, uIdle);   // r54: face interior 0.45 rising to 1.0 within 0.08R of the contour; blades keep full // r55: interior 0.3, rim 1.0 over 0.12R // r56: side-on sheets also get face shading
                 float rS = r / max(uScale, 0.05);   // radius relative to orb size (small appear orb is not all 'centre')
                 float edgeOnly = mix(1.0, smoothstep(0.45, 0.95, abs(uv.y)), uRes);
                 float bR = mix(0.45, 0.12, uIdle);
@@ -312,7 +312,7 @@ half4 main(float2 fc){
                 float lineSoft = exp(-(dEdgePx * dEdgePx) / 32.0);   // r54: ~8 px same-colour soft glow
                 float edge6 = mix(lineSoft * 0.4, 1.0, lineCore) * smoothstep(0.6, 0.7, sideS) * (1.0 - uIdle);   // r46: only side-on sheets get the analytic bright line   // r50d: gate the blade line by the whole-sheet side-on value; the per-pixel slab normal flips at every silhouette pixel and drew dotted white outlines on face-on sheets // r52: idle off - the edge line keyed on distance-to-rim only fires on scattered ray hits along edge-on sheet silhouettes = the dotted white lines // r54: idle on again (8 px soft); min-slab 2.5 px keeps hits continuous // r55: idle off again (no dotted residual)
                 bri *= mix(1.0, 1.0 + 3.0 * q1 * edge6 * whiteR, uIdle);   // r46: boost only the analytic edge line near the centre
-                float bladeK = smoothstep(0.6, 0.7, sideS); bri *= mix(1.0, mix(1.0, 1.5, bladeK), uIdle);   // r55: blade core x1.5 from sideS, not edge6
+                float bladeK = 0.0;   // r56: no whole-sheet blade whitening/boost in the main scene (core line lives in the blade pass)
                 a *= aaK * uBodyA;
                 // listening: inner edge coverage over ~1.5 px (distance to the petal edge in pixels)
                 float wE = sheetHalfW(pos, ws);
@@ -333,7 +333,7 @@ half4 main(float2 fc){
                 float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
                 a = mix(a, aSilk, uIdle);
-                a *= mix(1.0, smoothstep(0.6, 0.75, sideS), uBlade); bri *= mix(1.0, 1.8, uBlade);   // r55: blade-only pass keeps side-on sheets, boost for soft glow
+                float corePx = abs(uv.y) * sheetHalfW(pos, ws) * abs(nW.z) / max(pxW / 1.5, 1e-6); float coreK = smoothstep(0.85, 0.9, sideS) * (1.0 - smoothstep(1.0, 1.5, corePx)); if (uBlade > 0.5) { a = coreK; bri = 1.5; }   // r56: blade pass keeps only the projected spine of sheets with side > 0.85, <= 3 px wide
                 bri = min(bri, mix(1e3, 1.1, uRes));   // result: no fully white sheet bodies
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
                 float wR = mix(0.28, 0.12, uIdle);   // r37: white star radius 12% R
@@ -345,6 +345,7 @@ half4 main(float2 fc){
                 col.rgb = mix(col.rgb, half3(0.498, 0.902, 1.0), half(uIdle * bladeK * (1.0 - whiteR)));   // r55: outer blade -> bright cyan #7FE6FF
                 half lc = dot(col.rgb, half3(0.2126, 0.7152, 0.0722));
                 col.rgb = max(mix(half3(lc), col.rgb, half(mix(1.0, 1.0/1.3, wm))), half3(0));
+                if (uBlade > 0.5) col.rgb = mix(half3(0.498, 0.902, 1.0), half3(1.0), half(whiteR));   // r56: core line white within 0.25R, bright cyan #7FE6FF outside
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (uBlend > 0.5) {
                     half3 e = min(c4.rgb * c4.a, half3(1.0));
@@ -518,8 +519,11 @@ internal fun renderSheetStills(
         if (id > 0.5f) {
             val bladeImg = pass(0f, 0f, 1f)
             val bPx = 8f * size / 870f
-            c.drawImage(bladeImg, 0f, 0f, Paint().apply {
+            c.drawImage(bladeImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })   // r56: sharp core line once
+            c.drawImage(bladeImg, 0f, 0f, Paint().apply {   // r56: soft glow = 8px blur x0.5, tinted bright cyan
                 imageFilter = ImageFilter.makeBlur(bPx, bPx, FilterTileMode.DECAL)
+                colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
+                    0.083f, 0.083f, 0.083f, 0f, 0f, 0.150f, 0.150f, 0.150f, 0f, 0f, 0.167f, 0.167f, 0.167f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
                 blendMode = BlendMode.PLUS
             })
         }
