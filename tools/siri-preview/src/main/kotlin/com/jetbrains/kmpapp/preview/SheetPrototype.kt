@@ -220,12 +220,13 @@ half4 main(float2 fc){
         float twist = (mix(1.4, 1.75, uIdle) + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1 * (1.0 - 0.5 * uListen);   // idle: more ribbon folds
         float bend = (1.0 - 0.6 * uListen) * mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
-        bend = mix(bend, 0.06 + 0.008 * fk, uIdle);   // r46: bow 0.06..0.1
+        bend = mix(bend, (k == 3 || k == 5 || k == 6) ? 0.15 + 0.025 * (fk - 3.0) / 1.5 : 0.06 + 0.008 * fk, uIdle);   // r46: bow 0.06..0.1 // r65: blades bow 0.15-0.2
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
-        ws = mix(ws, (k == 7 ? 0.95 : k == 6 ? 0.95 : k == 0 ? 0.95 : (k == 1 ? 1.05 : (k == 2 ? 0.95 : (k == 3 ? 1.0 : (k == 4 ? 1.0 : 1.05))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R
+        ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 1.0 : k == 0 ? 0.78 : (k == 1 ? 1.06 : (k == 2 ? 0.94 : (k == 3 ? 1.0 : (k == 4 ? 0.7 : 1.0))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R
         offW += uIdle * (k == 7 ? 0.05 : k == 6 ? 0.05 : k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R // r51e
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         if (k == 2) offW += float3(0.0, 0.0, 0.25 * uIdle);   // r52: face-on red sits in front
+        if (!(k == 3 || k == 5 || k == 6)) { float oa = k == 0 ? 0.9 : (k == 1 ? -1.5708 : (k == 2 ? 2.356 : (k == 4 ? -0.35 : 3.6))); float od = k == 0 ? 0.25 : (k == 1 ? 0.22 : (k == 2 ? 0.25 : (k == 4 ? 0.28 : 0.2))); offW += uIdle * od * float3(cos(oa), sin(oa), 0.0); }   // r65: fill sheets centred off the orb centre (0.2-0.28R, spread: k0 upper-right, k1 down, k2 upper-left, k4 right, k7 left-down); blades k3/k5/k6 still cross the centre
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
         float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sizeI * sc) * 1.5;   // AA transition ~1.5 screen px
@@ -350,7 +351,7 @@ half4 main(float2 fc){
                 bri *= 1.0 + mix(0.8, 0.32, uIdle) * q1 * exp(-(rS/gR)*(rS/gR));                                   // idle: less circular centre wash
                 bri *= mix(1.0, mix(1.0, 0.7, smoothstep(0.7, 1.0, abs(uv.y))), q1);           // darker toward sheet boundaries
                 // idle silk: face-on ~0.38, side-on rim ~0.95; fade inward from bright edge; outer melts to black
-                float aOrient = mix(mix(0.5, 0.55, uIdle), 1.0, pow(clamp(sideP, 0.0, 1.0), 0.85));   // r53: face-on red opacity 0.85 // r64: face opacity 0.55 for all sheets
+                float aOrient = mix(mix(0.5, (k == 2 ? 0.85 : 0.55), uIdle), 1.0, pow(clamp(sideP, 0.0, 1.0), 0.85));   // r53: face-on red opacity 0.85 // r64: face opacity 0.55 for all sheets // r65: face-on red back to 0.85
                 float aInward = mix(mix(1.0, 0.22, pow(v, 0.6)), 1.0, uIdle);   // r51 idle: the one-sided fade made half of each lens ~invisible, so the visible shape was a half-lens cut along its straight centreline (the straight edges / hexagram outline)
                 float aEdge = mix(clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0), smoothstep(0.0, 0.04, (1.0 - abs(uv.y)) * sheetHalfW(pos, ws)), uIdle);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px // r64: outer feather 0.04R
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
