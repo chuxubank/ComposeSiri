@@ -556,7 +556,7 @@ internal fun renderSheetStills(
         }
         // Wide soft glow ~0.5 R, strength ~0.35, fast falloff.
         run {
-            val g = mixF(0.15f, 0.3f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))   // r47: soft glow toward peak 0.9
+            val g = mixF(0.15f, 0.65f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))   // r56: centre soft glow stronger (radius stays 0.16R) for ~4% white star
             if (g > 0.001f) {
                 // radial gradient instead of a mask-blurred circle (the blur produced a faint square box at small sizes)
                 val gs = (if (prm.coreScale >= 0f) prm.coreScale else 1f) * radius * mixF(0.5f, 0.16f, id)   // r55 idle: soft glow 0.16R
