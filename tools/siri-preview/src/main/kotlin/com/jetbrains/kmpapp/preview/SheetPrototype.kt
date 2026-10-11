@@ -115,6 +115,8 @@ half4 main(float2 fc){
         float3 ang = off + rate * (PI/180.0) * uSpinT * 0.5 + float3(wig*0.35, wig*0.25, -wig*0.2);
         // long-term near edge-on sheets (cyan, dark red): plane normal kept ~perpendicular to the view
         if (k == 3 || k == 4) ang.x = 1.5708 + 0.22 * sin(t * 0.6 + fk) + (k == 4 ? 3.1416 : 0.0);
+        // blue: limit flip so its normal stays within ~50 deg of the view (|x|,|y| tilt <= 0.6 rad)
+        if (k == 1) { ang.x = 0.6 * sin(ang.x); ang.y = 0.6 * sin(ang.y); }
         float tg = uTangle * (k == 1 ? -1.0 : 1.0);
         ang += float3(2.4, -1.9, 3.1) * tg;
         // processing: all sheets share one in-plane orientation, face the camera, orbit together
@@ -137,7 +139,7 @@ half4 main(float2 fc){
         float twist = (1.4 + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1;   // wiggle(0.2, ~15 deg)
         float bend = mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
-        if (k == 1) offW += float3(0.0, 0.0, 0.1 * q1);   // blue sits ~0.1R toward the camera, mostly in front of red
+        if (k == 1) offW += float3(0.0, 0.0, 0.22 * q1);   // blue sits ~0.1R toward the camera, mostly in front of red
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
         float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sc) * 1.5;   // AA transition ~1.5 screen px
@@ -191,12 +193,13 @@ half4 main(float2 fc){
                 float zw = (R * (pos * sc)).z + offW.z;
                 float wf = smoothstep(-0.08, 0.08, zw);
                 if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
-                bri *= 1.0 + 4.0 * q1 * sideS * sideS * exp(-(r/0.45)*(r/0.45));   // whole-sheet brightening when edge-on
+                bri *= 1.0 + 2.5 * q1 * pow(sideS, 4.0) * exp(-(r/0.45)*(r/0.45));   // whole-sheet brightening when edge-on
                 a *= aaK;
                 if (k == 2) { bri *= mix(0.8, 1.0, uProc); a *= mix(0.7 / 0.9, 1.0, uProc); }   // red: darker, alpha 0.7
-                bri *= 1.0 + 0.5 * q1 * exp(-(r/0.5)*(r/0.5));                                   // internal brightness gradient
+                bri *= 1.0 + 0.8 * q1 * exp(-(r/0.5)*(r/0.5));                                   // internal brightness gradient
+                bri *= mix(1.0, mix(1.0, 0.7, smoothstep(0.7, 1.0, abs(uv.y))), q1);           // darker toward sheet boundaries
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
-                float wm = 0.85 * q1 * sideS * sideS * exp(-(r/0.4)*(r/0.4));
+                float wm = 0.6 * q1 * pow(sideS, 4.0) * exp(-(r/0.28)*(r/0.28));
                 col.rgb = mix(col.rgb, half3(1.0), half(wm));
                 half lc = dot(col.rgb, half3(0.2126, 0.7152, 0.0722));
                 col.rgb = max(mix(half3(lc), col.rgb, half(mix(1.0, 1.0/1.3, wm))), half3(0));
@@ -447,7 +450,7 @@ internal fun renderSheetStills(
 }
 
 /** Six-state demo in the preview: eased params per state, synthetic voice envelope. */
-internal val SheetDemoStates = listOf("Appear" to 1.5, "Idle" to 2.0, "Listening" to 2.5, "Processing" to 3.0, "Result" to 3.0, "Disappear" to 1.5)
+internal val SheetDemoStates = listOf("Appear" to 1.5, "Idle" to 6.0, "Listening" to 2.5, "Processing" to 3.0, "Result" to 3.0, "Disappear" to 1.5)
 
 internal fun renderSheetDemo(outDir: Path, fps: Double = 10.0) {
     data class Target(val speed: Float, val flip: Float, val scale: Float, val core: Float)
