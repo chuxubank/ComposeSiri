@@ -90,7 +90,7 @@ half4 main(float2 fc){
     float3 ro = float3(0, 0, 5.85);                  // camera 2700/461
     float3 rd = normalize(float3(p * (1.0/5.85) * 5.85 / 5.85, -1.0));
     rd = normalize(float3(p / 5.85, -1.0));
-    half3 acc = half3(0);
+    half3 acc = half3(0); half accA = 0.0;
     float r = length(pS);
     float radial = 1.0 - smoothstep(0.80, 0.97, r);
     float q1 = 1.0 - uProc;
@@ -113,6 +113,8 @@ half4 main(float2 fc){
         float3 off = k == 0 ? float3(0.3, 0.2, 0.0) : (k == 1 ? float3(1.4, 2.1, 1.1) : (k == 2 ? float3(2.6, 0.9, 2.2)
                     : (k == 3 ? float3(0.9, 3.3, 4.0) : (k == 4 ? float3(3.7, 1.6, 0.5) : float3(5.1, 4.4, 2.9)))));
         float3 ang = off + rate * (PI/180.0) * uSpinT * 0.5 + float3(wig*0.35, wig*0.25, -wig*0.2);
+        // long-term near edge-on sheets (cyan, dark red): plane normal kept ~perpendicular to the view
+        if (k == 3 || k == 4) ang.x = 1.5708 + 0.22 * sin(t * 0.6 + fk) + (k == 4 ? 3.1416 : 0.0);
         float tg = uTangle * (k == 1 ? -1.0 : 1.0);
         ang += float3(2.4, -1.9, 3.1) * tg;
         // processing: all sheets share one in-plane orientation, face the camera, orbit together
@@ -172,8 +174,8 @@ half4 main(float2 fc){
             if (uPass < 0.5) {
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
-                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.8 * (0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 4.5 * uSideK * uSideK * pow(1.0 - ndv, 2.0) * exp(-(r/0.26)*(r/0.26)))) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
-                float a = 0.9 * (1.0 - smoothstep(0.94, 1.0, abs(uv.y))) * (0.75 + 0.25*centre) * fog;   // solid body, ~3% feather
+                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.8 * (0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 4.5 * uSideK * uSideK * pow(1.0 - ndv, 6.0) * exp(-(r/0.6)*(r/0.6)))) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
+                float a = 0.9 * (1.0 - smoothstep(0.97, 1.0, abs(uv.y))) * (0.75 + 0.25*centre) * fog;   // solid body, ~3% feather
                 // solid hard-edged oval with a slight soft edge
                 // feathered white disc -> soft oval when flat
                 float eo = 1.0 - smoothstep(0.93, 1.0, abs(uv.y));   // nearly hard edge
@@ -212,10 +214,11 @@ half4 main(float2 fc){
             if (dm < 0.0) break;
             half4 c4 = half4(0);
             for (int j = 0; j < 6; j++) { if (float(j) == bi) { c4 = cc6[j]; dd6[j] = -1.0; } }
-            acc = c4.rgb * c4.a + acc * (1.0 - c4.a);
+            acc = c4.rgb * c4.a + acc * (1.0 - c4.a); accA = c4.a + accA * (1.0 - c4.a);
         }
     }
     acc *= half(radial);
+    if (uLayer > 0.5 && uBlend < 0.5) return half4(acc, accA * half(radial));   // premultiplied, for layer OVER
     return half4(acc, 1);
 }
 """
@@ -278,10 +281,10 @@ internal fun renderSheetStills(
             b.uniform("uGather", prm.gather)
             b.uniform("uOrbit", prm.orbit)
             b.uniform("uTangle", prm.tangle)
-            b.uniform("uBlend", (System.getenv("BLEND") ?: "1").toFloat())
+            b.uniform("uBlend", (System.getenv("BLEND") ?: "0").toFloat())
             b.uniform("uLayer", layer)
             val surf = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
-            surf.canvas.clear(Color.BLACK)
+            surf.canvas.clear(if (layer > 0f) Color.TRANSPARENT else Color.BLACK)
             surf.canvas.drawPaint(Paint().apply { this.shader = b.makeShader() })
             return surf.makeImageSnapshot()
         }
@@ -294,7 +297,7 @@ internal fun renderSheetStills(
             val bs = f16(); bs.canvas.clear(Color.BLACK)
             val bb = radius * 0.04f * (1f - prm.proc) + 0.01f
             bs.canvas.drawImage(backImg, 0f, 0f, Paint().apply { imageFilter = ImageFilter.makeBlur(bb, bb, FilterTileMode.DECAL); blendMode = BlendMode.PLUS })
-            bs.canvas.drawImage(front, 0f, 0f, Paint().apply { blendMode = BlendMode.SCREEN })
+            bs.canvas.drawImage(front, 0f, 0f, Paint().apply { blendMode = BlendMode.SRC_OVER })   // front sharp, OVER the blurred back
             bs.makeImageSnapshot()
         } else pass(0f)
         val k = size / 1740f
@@ -303,7 +306,7 @@ internal fun renderSheetStills(
         val c = scene.canvas
         c.clear(Color.BLACK)
         c.drawImage(bodyImg, 0f, 0f, Paint().apply {
-            imageFilter = ImageFilter.makeBlur(radius * 0.015f * (1f - prm.proc) + 0.6f, radius * 0.015f * (1f - prm.proc) + 0.6f, FilterTileMode.DECAL)
+            imageFilter = ImageFilter.makeBlur(0.6f, 0.6f, FilterTileMode.DECAL)   // no extra soften on the front
             blendMode = BlendMode.PLUS
         })
         // White spill along sheets near the centre (~30%).
@@ -320,9 +323,9 @@ internal fun renderSheetStills(
         c.restore()
         // HDR core (peak ~4): additive passes, halo ~15% radius.
         for ((r, sig, reps) in listOf(
-            Triple(radius * 0.11f, radius * 0.08f, 1),   // core radius back to 1.0, intensity x1.3 (was 0.7)
-            Triple(radius * 0.06f, radius * 0.035f, 2),
-            Triple(radius * 0.025f, radius * 0.01f, 4),
+            Triple(radius * 0.066f, radius * 0.048f, 1),   // core radius back to 1.0, intensity x1.3 (was 0.7)
+            Triple(radius * 0.036f, radius * 0.021f, 2),
+            Triple(radius * 0.015f, radius * 0.006f, 4),
         )) {
           val total = 1.3f * 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
           var left = total
@@ -337,7 +340,7 @@ internal fun renderSheetStills(
         }
         // Wide soft glow ~0.5 R, strength ~0.35, fast falloff.
         run {
-            val g = 0.35f * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
+            val g = 0.15f * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
             if (g > 0.001f) c.drawCircle(cx, cx, radius * 0.18f, Paint().apply {
                 color = ((g * 255).toInt().coerceIn(0, 255) shl 24) or 0xFFFFFF
                 blendMode = BlendMode.PLUS
@@ -385,17 +388,17 @@ internal fun renderSheetStills(
         // Ball base: deep blue #0B1020 under everything; inner rim glow (0.8..1.0 R) from blurred sheet colour.
         val sh = prm.shell.coerceIn(0f, 1f)
         fc.drawCircle(cx, cx, radius * 0.985f, Paint().apply {
-            color = ((0xFF * sh).toInt() shl 24) or 0x0B1020
+            color = ((0xFF * sh).toInt() shl 24) or 0x05070D
             blendMode = BlendMode.PLUS
             maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.01f)
         })
         val rimA = (sh * (1f - prm.move)).coerceIn(0f, 1f)
         if (rimA > 0.01f) {
-            fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (110 * rimA).toInt() })
+            fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (55 * rimA).toInt() })
             fc.drawImage(bodyImg, 0f, 0f, Paint().apply {
                 imageFilter = ImageFilter.makeBlur(radius * 0.25f, radius * 0.25f, FilterTileMode.DECAL)
                 colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
-                    2.5f, 0f, 0f, 0f, 0f, 0f, 2.5f, 0f, 0f, 0f, 0f, 0f, 2.5f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
+                    0.15f, 0.15f, 0.15f, 0f, 0f, 0.8f, 0.8f, 0.8f, 0f, 0f, 0.7f, 0.7f, 0.7f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
             })
             // keep only the inner band 0.8..1.0 R, nothing outside the ball
             fc.drawCircle(cx, cx, radius * 0.9f, Paint().apply {
