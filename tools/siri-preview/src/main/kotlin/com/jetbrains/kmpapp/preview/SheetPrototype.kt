@@ -222,7 +222,7 @@ half4 main(float2 fc){
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         bend = mix(bend, (k == 3 || k == 5 || k == 6) ? 0.15 + 0.025 * (fk - 3.0) / 1.5 : 0.06 + 0.008 * fk, uIdle);   // r46: bow 0.06..0.1 // r65: blades bow 0.15-0.2
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
-        ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 1.0 : k == 0 ? 0.78 : (k == 1 ? 0.975 : (k == 2 ? 0.94 : (k == 3 ? 1.0 : (k == 4 ? 0.8125 : 1.0))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R // r67: big blue 0.78R
+        ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 0.94 : k == 0 ? 0.78 : (k == 1 ? 0.975 : (k == 2 ? 0.94 : (k == 3 ? 0.94 : (k == 4 ? 0.8125 : 0.94))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R // r67: big blue 0.78R // r69: blades k3/k5/k6 half-length 0.75R
         offW += uIdle * (k == 7 ? 0.05 : k == 6 ? 0.05 : k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R // r51e
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         if (k == 2) offW += float3(0.0, 0.0, 0.25 * uIdle);   // r52: face-on red sits in front
@@ -249,10 +249,11 @@ half4 main(float2 fc){
                 float dPx = dBest * pxPer;
                 float hw = mix(9.0, 2.0, smoothstep(0.6, 1.0, uA));   // r68: 18px wide over 60% of the length, 4px at the tip
                 float cov = (1.0 - smoothstep(hw - 0.5, hw + 0.5, dPx)) * (1.0 - smoothstep(0.92, 1.0, uA)) * fade;
-                float keepS = (k == 5) ? -1.0 : 1.0; cov *= (uS * keepS > 0.0) ? 1.0 : (1.0 - smoothstep(0.1, 0.2, r / max(uScale, 0.05)));   // r68: keep one long half; the other half fades outside 0.1R (ribbon, not symmetric star)
+                float keepS = (k == 6) ? -1.0 : 1.0;   // r69: kept halves ~80/210/320 deg apart
+                cov *= (uS * keepS > 0.0) ? 1.0 : (1.0 - smoothstep(0.1, 0.2, r / max(uScale, 0.05)));   // r68: keep one long half; the other half fades outside 0.1R (ribbon, not symmetric star)
                 float rB = r / max(uScale, 0.05);
                 float bB = mix(2.5, 1.5, smoothstep(0.1, 0.25, rB)) * mix(1.0, 0.8, uA);
-                half3 cB = mix(half3(0.498, 0.902, 1.0), half3(1.0), half(1.0 - smoothstep(0.15, 0.3, rB))); // r62: white to 0.3R
+                half3 cB = mix(mix(half3(0.290, 0.608, 1.0), half3(0.498, 0.902, 1.0), half(1.0 - smoothstep(0.3, 0.75, rB))), half3(1.0), half(1.0 - smoothstep(0.08, 0.16, rB))); // r69: white to 0.08R, cyan #7FE6FF, tip blue #4A9BFF
                 bladeAcc = max(bladeAcc, cB * half(bB * cov));
             }
             continue;
@@ -360,6 +361,7 @@ half4 main(float2 fc){
                 bri *= mix(1.0, mix(1.0, 0.7, smoothstep(0.7, 1.0, abs(uv.y))), q1);           // darker toward sheet boundaries
                 // idle silk: face-on ~0.38, side-on rim ~0.95; fade inward from bright edge; outer melts to black
                 float aOrient = mix(mix(0.5, ((k == 2 || k == 4) ? 0.85 : 0.55), uIdle), 1.0, pow(clamp(sideP, 0.0, 1.0), 0.85));   // r53: face-on red opacity 0.85 // r64: face opacity 0.55 for all sheets // r65: face-on red back to 0.85 // r66: k4 0.85
+                if (k == 1 || k == 3 || k == 6 || k == 7) aOrient *= mix(1.0, mix(0.3 / 0.55, 1.0, smoothstep(0.1, 0.2, rS)), uIdle);   // r69: blue faces 0.3 opacity inside 0.2R
                 float aInward = mix(mix(1.0, 0.22, pow(v, 0.6)), 1.0, uIdle);   // r51 idle: the one-sided fade made half of each lens ~invisible, so the visible shape was a half-lens cut along its straight centreline (the straight edges / hexagram outline)
                 float aEdge = mix(clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0), smoothstep(0.0, 0.04, (1.0 - abs(uv.y)) * sheetHalfW(pos, ws)), uIdle);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px // r64: outer feather 0.04R
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
