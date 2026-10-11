@@ -65,13 +65,13 @@ float profile(float u){
 
 // r42 idle geometry: lens surface x=u*L, y=v*W0*sqrt(1-u^2), z=b*(u^2-0.3), 20 deg twist about the long axis; units = orb radius R
 float sheetSdfIdle(float3 p, float b, out float2 uv){
-    float L = 0.8; float W0 = 0.62;   // r48: W0 0.62R
+    float L = 0.45; float W0 = 0.7;   // r49: full length 0.9R (L is half-length), W0 0.7R for cyan/blue faces
     float u = clamp(p.x / L, -1.0, 1.0);   // r45: centred lens
     float3 q = float3(p.x, p.y, p.z - b * (u*u - 0.3));
     float a = 0.1745 * u;
     float c = cos(a), s = sin(a);
     float2 yz = float2(c*q.y + s*q.z, -s*q.y + c*q.z);
-    float w = W0 * pow(max(1.0 - u*u, 0.0), 0.9);   // r48: pure (1-u^2)^0.9, tip taper removed
+    float w = W0 * pow(max(1.0 - u*u, 0.0), 1.2);   // r49: (1-u^2)^1.2, tips close to 0
     uv = float2(0.5 + 0.5*u, yz.x / max(w, 1e-4));
     float dz = abs(yz.y) - 0.004;
     float dy = abs(yz.x) - w;
@@ -103,7 +103,7 @@ float sheetSdf(float3 p, float twist, float bend, float ws, out float2 uv){
 
 // half width (sheet units) at the point p: same parametrisation as sheetSdf
 float sheetHalfW(float3 p, float ws){
-    if (uIdle > 0.5) { float uI = clamp(p.x / ws / 0.8, -1.0, 1.0); return ws * 0.62 * pow(max(1.0 - uI*uI, 0.0), 0.9); }   // r48: no tip taper   // r42 idle lens half width
+    if (uIdle > 0.5) { float uI = clamp(p.x / ws / 0.45, -1.0, 1.0); return ws * 0.7 * pow(max(1.0 - uI*uI, 0.0), 1.2); }   // r49: match sheetSdfIdle   // r42 idle lens half width
     float L = 1.05 * (1.0 - 0.3 * uListen);
     float u = clamp((p.x + L) / (2.0*L), 0.0, 1.0);
     return mix(profile(u), profile(0.5) * clamp(2.0 - 2.0 * abs(2.0*u - 1.0), 0.0, 1.0), uIdle) * 0.55 * ws;   // r41: same taper as sheetSdf
@@ -199,9 +199,9 @@ half4 main(float2 fc){
             float gam = k == 0 ? 0.2 : (k == 1 ? 1.3 : (k == 2 ? 2.4 : (k == 3 ? 0.75 : (k == 4 ? 1.85 : 2.95))));
             float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
             // r43c idle: long axis pitched 35..80 deg out of the screen plane, random azimuth (drift 3 deg/s); sheet rolls about its long axis <= 14 deg/s, phases staggered so 2-3 sheets are near edge-on (|n.v| < 0.3) at any time
-            float pitI = k == 0 ? 1.0297 : (k == 1 ? 0.9599 : (k == 2 ? 0.1745 : (k == 3 ? 0.8727 : (k == 4 ? 0.1745 : 1.0123))));   // r47: teal/blue/cyan pitched 50-59 deg (edge-on blades), reds 10 deg (faces to camera)
+            float pitI = k == 0 ? 0.2094 : (k == 1 ? 0.1745 : (k == 2 ? 0.1745 : (k == 3 ? 1.1694 : (k == 4 ? 0.1745 : 1.1868))));   // r49: k0/k1 half-side (pitch 12/10), k2/k4 reds pitch 10, k3/k5 blades pitch 67/68
             float psiI = (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 4.538 : (k == 3 ? 1.396 : (k == 4 ? 5.585 : 3.665))))) + 0.0524 * tI;   // r46: distinct azimuths for 6 sheets
-            float rolI = (k == 2 || k == 4) ? ((k == 2 ? 0.70 : -0.70) + 0.04 * sin(0.3 * tI + fk)) : ((k == 0 ? 2.1049 : (k == 1 ? 2.1398 : (k == 3 ? 0.8238 : 0.0977))) + (k == 0 ? -10.2 : (k == 1 ? 14.8 : (k == 3 ? 11.8 : 9.5))) * (PI/180.0) * tI);   // r47: r48 reds held 39-43 deg from face-on (normal vs view), others roll <=14.8 deg/s; phases searched: 2-3 of teal/blue/cyan side-on > 0.6 at all times
+            float rolI = (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.56 : (k == 1 ? -0.49 : (k == 2 ? 0.52 : -0.52))) + 0.04 * sin(0.3 * tI + fk)) : ((k == 3 ? 1.0105 : 2.899) + (k == 3 ? -10.6 : 12.0) * (PI/180.0) * tI);   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6
             float3 lI = float3(cos(pitI) * cos(psiI), cos(pitI) * sin(psiI), sin(pitI));
             float3 m2I = normalize(cross(lI, float3(0.0, 0.0, 1.0)));
             float3 m1I = cross(m2I, lI);
@@ -219,7 +219,7 @@ half4 main(float2 fc){
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         bend = mix(bend, 0.06 + 0.008 * fk, uIdle);   // r46: bow 0.06..0.1
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
-        ws = mix(ws, (k == 0 ? 1.05 : (k == 1 ? 1.1 : (k == 2 ? 0.75 : (k == 3 ? 1.0 : (k == 4 ? 0.82 : 1.05))))), uIdle);   // r48: teal/blue/cyan 1.0-1.1, reds 0.75 / 0.82
+        ws = mix(ws, (k == 0 ? 1.05 : (k == 1 ? 1.1 : (k == 2 ? 0.9 : (k == 3 ? 1.0 : (k == 4 ? 0.98 : 1.05))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98
         offW += uIdle * (k == 0 ? 0.10 : (k == 1 ? -0.12 : (k == 2 ? 0.15 : (k == 3 ? -0.06 : (k == 4 ? 0.08 : -0.14))))) * (R * float3(1.0, 0.0, 0.0));   // r45b idle: shift along the long axis +-0.15R so sheets do not all cross at one point
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         float3 nW = R * float3(0, 0, 1);
