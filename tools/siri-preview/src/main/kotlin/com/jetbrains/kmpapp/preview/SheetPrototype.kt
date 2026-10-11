@@ -103,7 +103,7 @@ half4 sheetColor(int k){
 
 half4 main(float2 fc){
     float2 pS = (fc - 0.5*uSize) / (0.45*uSize.x);
-    float sizeI = mix(1.0, 1.5, uIdle);   // r38 idle: sheet radius (radial fade caps the outer edge at ~0.7R)
+    float sizeI = mix(1.0, 1.8, uIdle);   // r38 idle: sheet radius (radial fade caps the outer edge at ~0.7R)
     float2 p = pS / (uScale * mix(0.8, 0.9, uProc) * sizeI);   // sheets kept within ~0.85R   // sheets at 0.9 stay inside the glass   // ribbons fill the glass
     p.y = -p.y;
     float3 ro = float3(0, 0, 5.85);                  // camera 2700/461
@@ -113,7 +113,7 @@ half4 main(float2 fc){
     float r = length(pS);
     float rad0 = mix(0.78, 0.80, uProc) + 0.5 * uListen;
     float rad1 = mix(0.88, 0.97, uProc) + 0.5 * uListen;
-    float radial = 1.0 - smoothstep(mix(rad0, 0.62, uIdle), mix(rad1, 0.74, uIdle), r);   // idle: melt into black before the glass rim
+    float radial = 1.0 - smoothstep(mix(rad0, 0.72, uIdle), mix(rad1, 0.86, uIdle), r);   // idle: melt into black before the glass rim
     float q1 = 1.0 - uProc;
     float starBoost = 1.0 + 3.0 * q1 * uSideK * exp(-(r/0.2)*(r/0.2));
     float dd6[6]; half4 cc6[6];
@@ -180,6 +180,7 @@ half4 main(float2 fc){
             if (k == 3 || k == 4 || k == 5) th = 0.2 * sin(0.3 * tI + fk);   // held near edge-on (base pose below), <= 3.5 deg/s
             float gam = k == 0 ? 0.2 : (k == 1 ? 1.3 : (k == 2 ? 2.4 : (k == 3 ? 0.75 : (k == 4 ? 1.85 : 2.95))));
             float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
+            RI = rotZ(fk * 0.5236) * RI;   // r40: fixed tilt about the view axis 0/30/60/90/120/150 deg
             float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
             float3 c0 = normalize(Rm[0]); float3 c1 = normalize(Rm[1] - dot(Rm[1], c0) * c0); float3 c2 = cross(c0, c1);
             R = float3x3(c0, c1, c2);
@@ -197,12 +198,12 @@ half4 main(float2 fc){
         float3 o = Ri * ((ro - offW) / sc); float3 d = Ri * rd;
         float tt = length(o) - 1.5; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0); float nearT = 0.0; float aaK = 1.0;
         for (int i = 0; i < 220; i++) {
-            if (i >= 128 && uListen < 0.01) break;
+            if (i >= 128 && uListen < 0.01 && uIdle < 0.01) break;   // r40 idle: full 220 steps (grazing rays)
             float3 pos = o + d*tt;
             float dd = sheetSdf(pos, twist, bend, ws, uv);
             if (dd < minD) { minD = dd; nearUv = uv; nearT = tt; }
-            if (dd < mix(0.0005, 0.003, uListen)) { hit = true; break; }   // listening: grazing rays no longer crawl out of iterations
-            tt += max(dd * mix(0.4, 0.3, uListen), 0.0012);   // listening: finer march, no ragged silhouettes
+            if (dd < mix(mix(0.0005, 0.003, uListen), 0.0015, uIdle)) { hit = true; break; }   // listening: grazing rays no longer crawl out of iterations
+            tt += max(dd * mix(mix(0.4, 0.3, uListen), 0.25, uIdle), mix(0.0012, 0.0005, uIdle));   // r40 idle: no stepping over the thin slab (hatch streaks)   // listening: finer march, no ragged silhouettes
             if (tt > length(o) + 1.5) break;
         }
         half3 baseC = sheetColor(k).rgb;
@@ -215,7 +216,7 @@ half4 main(float2 fc){
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
         // analytic AA: near-miss within ~1 px still contributes with fractional coverage
         if (!hit && minD < pxW && uPass < 0.5 && uProc < 0.01) { hit = true; tt = nearT; aaK = 1.0 - minD / pxW; }
-        if (hit && uListen > 0.01) {
+        if (hit && (uListen > 0.01 || uIdle > 0.01)) {
             // refine the hit depth (stable depth order where petals intersect; removes notched intersection lines)
             for (int r2 = 0; r2 < 4; r2++) { float2 uvR; tt += sheetSdf(o + d*tt, twist, bend, ws, uvR) * 0.9; }
         }
@@ -227,7 +228,7 @@ half4 main(float2 fc){
                 sheetSdf(pos+float3(0,e,0),twist,bend,ws,tmp)-sheetSdf(pos-float3(0,e,0),twist,bend,ws,tmp),
                 sheetSdf(pos+float3(0,0,e),twist,bend,ws,tmp)-sheetSdf(pos-float3(0,0,e),twist,bend,ws,tmp)));
             float ndv = abs(dot(n, -d));
-            float fres = pow(1.0 - ndv, 4.0);
+            float fres = mix(pow(1.0 - ndv, 4.0), pow(sideS, 4.0), uIdle);   // r40 idle: sheet-level sheen, no per-pixel slab-normal banding
             // feathered ring texture: transparent middle, colour toward one edge (AE inverted circle mask)
             float side = clamp(uv.y*0.5+0.5, 0.0, 1.0);
             float ring = 0.35 + 0.65*pow(side, 1.5);
@@ -284,7 +285,7 @@ half4 main(float2 fc){
                 bri *= 1.0 + mix(0.8, 0.32, uIdle) * q1 * exp(-(rS/gR)*(rS/gR));                                   // idle: less circular centre wash
                 bri *= mix(1.0, mix(1.0, 0.7, smoothstep(0.7, 1.0, abs(uv.y))), q1);           // darker toward sheet boundaries
                 // idle silk: face-on ~0.38, side-on rim ~0.95; fade inward from bright edge; outer melts to black
-                float aOrient = mix(0.35, 1.0, pow(clamp(sideS, 0.0, 1.0), 0.85));
+                float aOrient = mix(0.5, 1.0, pow(clamp(sideS, 0.0, 1.0), 0.85));   // r40: face-on opacity 0.5
                 float aInward = mix(1.0, 0.22, pow(v, 0.6));
                 float aEdge = clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;
@@ -478,11 +479,11 @@ internal fun renderSheetStills(
         }
         // HDR core (peak ~4): additive passes, halo ~15% radius.
         for ((r, sig, reps) in listOf(
-            Triple(radius * mixF(0.066f, 0.022f, id), radius * mixF(0.048f, 0.011f, id), 1),   // idle: shrink circular core
+            Triple(radius * mixF(0.066f, 0.075f, id), radius * mixF(0.048f, 0.025f, id), 1),   // r40 idle: near-white blown core within ~0.1R
             Triple(radius * mixF(0.036f, 0.013f, id), radius * mixF(0.021f, 0.0055f, id), 2),
             Triple(radius * mixF(0.015f, 0.007f, id), radius * mixF(0.006f, 0.0028f, id), 4),
         )) {
-          val total = mixF(1.3f, 0.65f, id)   /* r39: HDR peak ~2.0 */ * 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
+          val total = mixF(1.3f, 1.1f, id)   /* r40: blown-out core */ * 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
           var left = total
           while (left > 0.001f) {
             val a = left.coerceAtMost(1f); left -= a
