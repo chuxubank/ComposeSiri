@@ -34,6 +34,7 @@ uniform float uGather;    // result: drops gathered into a bright white cluster
 uniform float uOrbit;     // shared orbit angle (rad)
 uniform float uTangle;    // appear: 1 = twisted/compressed pose, 0 = unwound
 uniform float uBlend;     // body compositing: 0 = OVER (depth sorted), 1 = Screen
+uniform float uLayer;     // 0 = all, 1 = front half only, 2 = behind-centre half only (depth blur)
 
 const float PI = 3.14159265;
 
@@ -48,7 +49,7 @@ float profile(float u){
     float oval = sqrt(max(1.0 - (2.0*u-1.0)*(2.0*u-1.0), 0.0));
     // drop: round head, thin tail: sin(pi t)^0.6 * (1 - 0.6 t)
     float drop = pow(m, 0.6) * (1.0 - 0.6*u) * 1.3;
-    return mix(m * (0.85 + 0.15*u), drop, uProc);   // ribbons: pointed tips
+    return mix(pow(m, 0.7), drop, uProc);   // ribbons: full lens-shaped middle, pointed tips
 }
 
 // signed-ish distance to sheet k in its local frame; also returns (u, v) in uv
@@ -76,7 +77,7 @@ half4 sheetColor(int k){
     // 4 main colours + 2 dimmer duplicates
     if (k == 0) return half4(0.18, 0.72, 0.525, 1);   // green #2EB886
     if (k == 1) return half4(0.118, 0.42, 1.0, 1);    // blue #1E6BFF
-    if (k == 2) return half4(0.878, 0.188, 0.235, 1); // red #E0303C
+    if (k == 2) return half4(0.831, 0.165, 0.208, 1); // red #D42A35
     if (k == 3) return half4(0.235, 0.784, 0.94, 1);  // cyan #3CC8F0
     if (k == 4) return half4(0.50, 0.10, 0.13, 1);    // darker red
     return half4(0.07, 0.24, 0.62, 1);                // darker blue
@@ -103,8 +104,9 @@ half4 main(float2 fc){
         // AE: time*45+value / -time*30+value deg/s, counter-rotating groups; wiggle(0.2,10/15)
         float spin = (mod(fk,2.0) < 0.5 ? 45.0 : -30.0) * PI/180.0;
         float wig = (sin(t*1.257 + fk*1.9) * 0.6 + sin(t*0.71 + fk*3.1) * 0.4) * uFlip;
-        float ws = (k == 2 || k == 5) ? 0.8 : 1.0;
+        float ws = k == 2 ? 1.25 : (k == 5 ? 0.8 : 1.0);   // red is the largest sheet
         if (k >= 3) ws *= 0.85;
+        if (k == 0 || k == 3) ws *= 0.7;                    // green / cyan: thin slivers
         // per-sheet X/Y/Z rates (deg/s), AE: time*30 / time*45 / -time*30 / -time*45
         float3 rate = k == 0 ? float3(30.0, -45.0, 30.0) : (k == 1 ? float3(-45.0, 30.0, -30.0) : (k == 2 ? float3(45.0, 30.0, -45.0)
                     : (k == 3 ? float3(-30.0, -45.0, 45.0) : (k == 4 ? float3(45.0, -30.0, 30.0) : float3(-45.0, 45.0, -30.0)))));
@@ -123,31 +125,31 @@ half4 main(float2 fc){
         dlt = ang - tgt; dlt = dlt - 6.2831853 * floor((dlt + 3.14159265) / 6.2831853);
         ang = tgt + dlt * (1.0 - uProc);
         float dsz = k == 0 ? 0.7 : (k == 1 ? 0.85 : (k == 2 ? 1.0 : (k == 3 ? 1.0 : (k == 4 ? 1.15 : 1.3))));
-        float sc = mix(1.0, 0.133 * dsz, uProc);   // x1.4 longer   // staggered drop sizes
-        float3 offW = max(uRing * uMove, 0.08 * uProc) * float3(cos(slot), sin(slot), 0.0);   // keep ~0.08R apart when gathered
+        float sc = mix(1.0, 0.133 * dsz * (1.0 + 0.3 * uGather), uProc);   // x1.4 longer   // staggered drop sizes
+        float3 offW = max(uRing * uMove, (0.08 + 0.06 * uGather) * uProc) * float3(cos(slot), sin(slot), 0.0);   // keep ~0.08R apart when gathered
         float rimMul = k >= 4 ? 0.0 : 0.5;
         float3x3 R = rotZ(ang.z) * rotY(ang.y) * rotX(ang.x);
         float3x3 Ri = float3x3(R[0][0],R[1][0],R[2][0], R[0][1],R[1][1],R[2][1], R[0][2],R[1][2],R[2][2]);
         // idle breathing: wiggle(0.2, 10/15) on twist and bend
         float br = sin(6.2832*0.2*t + fk*2.1), br2 = sin(6.2832*0.2*t + fk*1.3 + 1.0);
         float twist = (1.4 + wig * 0.5 + 0.26*br + 5.0*uTangle) * q1;   // wiggle(0.2, ~15 deg)
-        float bend = mix(0.35 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.08 + 0.2*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
+        float bend = mix(0.49 * (mod(fk,2.0)<0.5 ? 1.0 : -1.0) + wig*0.11 + 0.28*br2 + 0.9*uTangle, 0.05 + 0.05 * fk, uProc);   // staggered 5..30% bend: petal/crescent
         ws = mix(ws, 1.1, uProc);   // x1.6 wider, width:length ~1:2
         float3 o = Ri * ((ro - offW) / sc); float3 d = Ri * rd;
         float tt = length(o) - 1.5; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0);
-        for (int i = 0; i < 72; i++) {
+        for (int i = 0; i < 128; i++) {
             float3 pos = o + d*tt;
             float dd = sheetSdf(pos, twist, bend, ws, uv);
             if (dd < minD) { minD = dd; nearUv = uv; }
-            if (dd < 0.0008) { hit = true; break; }
-            tt += max(dd * 0.55, 0.002);
+            if (dd < 0.0005) { hit = true; break; }
+            tt += max(dd * 0.4, 0.0012);
             if (tt > length(o) + 1.5) break;
         }
         half4 col = half4(pow(sheetColor(k).rgb, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uProc));   // desaturate to grey-white
         if (hit) {
             float3 pos = o + d*tt; float2 tmp;
-            float e = 0.002;
+            float e = 0.0012;
             float3 n = normalize(float3(
                 sheetSdf(pos+float3(e,0,0),twist,bend,ws,tmp)-sheetSdf(pos-float3(e,0,0),twist,bend,ws,tmp),
                 sheetSdf(pos+float3(0,e,0),twist,bend,ws,tmp)-sheetSdf(pos-float3(0,e,0),twist,bend,ws,tmp),
@@ -170,13 +172,17 @@ half4 main(float2 fc){
             if (uPass < 0.5) {
                 // v: 0 at the rim (bright, hard) side .. 1 at the far edge (dark, feathered 15%)
                 float v = 1.0 - side;
-                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.8 * (0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 3.0 * uSideK * uSideK * pow(1.0 - ndv, 2.0) * exp(-(r/0.20)*(r/0.20)))) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
+                float bri = mix(0.95, 0.3, v) * (1.0 - 0.75 * pow(clamp((1.0 - uSideK) / 0.25, 0.0, 1.0), 0.5) * exp(-(r/0.35)*(r/0.35))) * (1.0 + 0.8 * (0.5 * uSideK * exp(-(r/0.13)*(r/0.13)) + 4.5 * uSideK * uSideK * pow(1.0 - ndv, 2.0) * exp(-(r/0.26)*(r/0.26)))) * mix(1.0 + 0.5 * fres, 1.0, uBlend);   // gloss 0 in Screen mode
                 float a = 0.9 * (1.0 - smoothstep(0.94, 1.0, abs(uv.y))) * (0.75 + 0.25*centre) * fog;   // solid body, ~3% feather
                 // solid hard-edged oval with a slight soft edge
                 // feathered white disc -> soft oval when flat
                 float eo = 1.0 - smoothstep(0.93, 1.0, abs(uv.y));   // nearly hard edge
-                bri = mix(bri, mix(0.5, 0.75, uMove), uProc);   // 0.5 while shrinking in place / gathered, below the glow threshold
+                bri = mix(bri, mix(mix(0.5, 0.75, uMove), 0.8, uGather), uProc);   // 0.5 while shrinking in place / gathered, below the glow threshold
                 a = mix(a, 0.9 * eo, uProc);
+                // depth layer split: world z of the hit (camera at +z)
+                float zw = (R * (pos * sc)).z + offW.z;
+                float wf = smoothstep(-0.08, 0.08, zw);
+                if (uLayer > 0.5) a *= (uLayer < 1.5 ? wf : 1.0 - wf);
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (uBlend > 0.5) {
                     half3 e = min(c4.rgb * c4.a, half3(1.0));
@@ -256,7 +262,7 @@ internal fun renderSheetStills(
         val prm = paramsAt(i, t)
         if (i < (System.getenv("SKIP") ?: "0").toInt()) continue   // resume a partial render
         if (i > (System.getenv("END") ?: "999999").toInt()) break
-        fun pass(id: Float): org.jetbrains.skia.Image {
+        fun pass(id: Float, layer: Float = 0f): org.jetbrains.skia.Image {
             val b = RuntimeShaderBuilder(effect)
             b.uniform("uSize", size.toFloat(), size.toFloat())
             b.uniform("uTime", t.toFloat())
@@ -273,15 +279,24 @@ internal fun renderSheetStills(
             b.uniform("uOrbit", prm.orbit)
             b.uniform("uTangle", prm.tangle)
             b.uniform("uBlend", (System.getenv("BLEND") ?: "1").toFloat())
+            b.uniform("uLayer", layer)
             val surf = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
             surf.canvas.clear(Color.BLACK)
             surf.canvas.drawPaint(Paint().apply { this.shader = b.makeShader() })
             return surf.makeImageSnapshot()
         }
-        val bodyImg = pass(0f)
         val radius = size * 0.45f
         val cx = size / 2f
         fun f16() = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
+        // Depth blur: front half sharp, sheets behind the centre blurred ~4% R (idle only; drops stay sharp).
+        val bodyImg = if (prm.proc < 0.99f) {
+            val front = pass(0f, 1f); val backImg = pass(0f, 2f)
+            val bs = f16(); bs.canvas.clear(Color.BLACK)
+            val bb = radius * 0.04f * (1f - prm.proc) + 0.01f
+            bs.canvas.drawImage(backImg, 0f, 0f, Paint().apply { imageFilter = ImageFilter.makeBlur(bb, bb, FilterTileMode.DECAL); blendMode = BlendMode.PLUS })
+            bs.canvas.drawImage(front, 0f, 0f, Paint().apply { blendMode = BlendMode.SCREEN })
+            bs.makeImageSnapshot()
+        } else pass(0f)
         val k = size / 1740f
         // 1) HDR scene: body (OVER in shader, slight soften) + sharp rim + HDR core.
         val scene = f16()
@@ -298,18 +313,18 @@ internal fun renderSheetStills(
                 0.33f, 0.33f, 0.33f, 0f, 0f, 0.33f, 0.33f, 0.33f, 0f, 0f,
                 0.33f, 0.33f, 0.33f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
         })
-        c.drawCircle(cx, cx, radius * 0.24f * prm.sideK, Paint().apply {
+        c.drawCircle(cx, cx, radius * 0.26f * prm.sideK, Paint().apply {
             blendMode = BlendMode.DST_IN
             maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.12f)
         })
         c.restore()
         // HDR core (peak ~4): additive passes, halo ~15% radius.
         for ((r, sig, reps) in listOf(
-            Triple(radius * 0.077f, radius * 0.056f, 1),
-            Triple(radius * 0.042f, radius * 0.025f, 2),
-            Triple(radius * 0.018f, radius * 0.007f, 4),
+            Triple(radius * 0.11f, radius * 0.08f, 1),   // core radius back to 1.0, intensity x1.3 (was 0.7)
+            Triple(radius * 0.06f, radius * 0.035f, 2),
+            Triple(radius * 0.025f, radius * 0.01f, 4),
         )) {
-          val total = 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
+          val total = 1.3f * 0.8f * reps * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
           var left = total
           while (left > 0.001f) {
             val a = left.coerceAtMost(1f); left -= a
@@ -320,15 +335,24 @@ internal fun renderSheetStills(
             })
           }
         }
-        // Gather flash: tiny centre core ~0.08 R, peak ~1.6
+        // Wide soft glow ~0.5 R, strength ~0.35, fast falloff.
+        run {
+            val g = 0.35f * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))
+            if (g > 0.001f) c.drawCircle(cx, cx, radius * 0.18f, Paint().apply {
+                color = ((g * 255).toInt().coerceIn(0, 255) shl 24) or 0xFFFFFF
+                blendMode = BlendMode.PLUS
+                maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.16f)
+            })
+        }
+        // Gather flash: white core ~0.1 R, peak ~1.6
         if (prm.flash > 0.01f) {
             var left = prm.flash * 2.5f
             while (left > 0.001f) {
                 val a = left.coerceAtMost(1f); left -= a
-                c.drawCircle(cx, cx, radius * 0.035f, Paint().apply {
+                c.drawCircle(cx, cx, radius * 0.058f, Paint().apply {
                     color = ((a * 255).toInt() shl 24) or 0xFFFFFF
                     blendMode = BlendMode.PLUS
-                    maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.018f)
+                    maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.03f)
                 })
             }
         }
@@ -358,20 +382,31 @@ internal fun renderSheetStills(
         val fc = fin.canvas
         // Shell glow after tonemap: 30%, ring 0.85..1.0 only.
         // Interior base #2D2C32, feathered edge; outside stays black.
-        // Idle glass: very faint dark base + ~8% wide soft edge glow at ~10%. No crisp ring.
+        // Ball base: deep blue #0B1020 under everything; inner rim glow (0.8..1.0 R) from blurred sheet colour.
         val sh = prm.shell.coerceIn(0f, 1f)
-        fc.drawCircle(cx, cx, radius * 0.97f, Paint().apply {
-            color = ((0x30 * sh).toInt() shl 24) or 0x2D2C32
+        fc.drawCircle(cx, cx, radius * 0.985f, Paint().apply {
+            color = ((0xFF * sh).toInt() shl 24) or 0x0B1020
             blendMode = BlendMode.PLUS
-            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.02f)
+            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.01f)
         })
-        fc.drawCircle(cx, cx, radius * 0.96f, Paint().apply {
-            mode = org.jetbrains.skia.PaintMode.STROKE
-            strokeWidth = radius * 0.08f
-            color = ((0x1A * sh).toInt() shl 24) or 0x6A8CC8
-            blendMode = BlendMode.PLUS
-            maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.03f)
-        })
+        val rimA = (sh * (1f - prm.move)).coerceIn(0f, 1f)
+        if (rimA > 0.01f) {
+            fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (110 * rimA).toInt() })
+            fc.drawImage(bodyImg, 0f, 0f, Paint().apply {
+                imageFilter = ImageFilter.makeBlur(radius * 0.25f, radius * 0.25f, FilterTileMode.DECAL)
+                colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
+                    2.5f, 0f, 0f, 0f, 0f, 0f, 2.5f, 0f, 0f, 0f, 0f, 0f, 2.5f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
+            })
+            // keep only the inner band 0.8..1.0 R, nothing outside the ball
+            fc.drawCircle(cx, cx, radius * 0.9f, Paint().apply {
+                blendMode = BlendMode.DST_IN
+                mode = org.jetbrains.skia.PaintMode.STROKE
+                strokeWidth = radius * 0.17f
+                maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.025f)
+            })
+            fc.drawCircle(cx, cx, radius * 0.995f, Paint().apply { blendMode = BlendMode.DST_IN })
+            fc.restore()
+        }
         // Processing disc: #1C1C1F at 85%, radius 1.7x the ring; shrinks and fades with the ring (move).
         if (prm.move > 0.01f) {
             fc.drawCircle(cx, cx, 1.7f * prm.ring * 0.9f * radius * prm.move, Paint().apply {
