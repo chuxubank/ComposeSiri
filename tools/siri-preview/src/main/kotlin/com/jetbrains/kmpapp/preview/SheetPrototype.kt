@@ -129,6 +129,7 @@ half4 main(float2 fc){
     float3 rd = normalize(float3(p * (1.0/5.85) * 5.85 / 5.85, -1.0));
     rd = normalize(float3(p / 5.85, -1.0));
     half3 acc = half3(0); half accA = 0.0;
+    half3 bladeAcc = half3(0);   // r61: screen-space blade core lines
     float r = length(pS);
     float rad0 = mix(0.78, 0.80, uProc) + 0.5 * uListen;
     float rad1 = mix(0.88, 0.97, uProc) + 0.5 * uListen;
@@ -228,6 +229,25 @@ half4 main(float2 fc){
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
         float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sizeI * sc) * 1.5;   // AA transition ~1.5 screen px
+        if (uBlade > 0.5 && uIdle > 0.5) {   // r61: blade core = distance to the sheet's projected centreline in screen pixels (no ray hits -> no dotted lines)
+            float fade = smoothstep(0.75, 0.9, sideS);
+            if (fade > 0.001) {
+                float3 Lw = R * float3(0.8 * ws, 0.0, 0.0);
+                float3 A3 = offW - Lw; float3 B3 = offW + Lw;
+                float2 Ap = 5.85 * A3.xy / (5.85 - A3.z); float2 Bp = 5.85 * B3.xy / (5.85 - B3.z);
+                float pxPer = 0.45 * uSize.x * uScale;
+                float2 ab = Bp - Ap; float h = clamp(dot(p - Ap, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+                float dPx = length(p - (Ap + ab * h)) * pxPer;
+                float uA = abs(2.0 * h - 1.0);
+                float hw = mix(2.0, 0.75, uA);
+                float cov = (1.0 - smoothstep(hw - 0.5, hw + 0.5, dPx)) * (1.0 - smoothstep(0.92, 1.0, uA)) * fade;
+                float rB = r / max(uScale, 0.05);
+                float bB = mix(2.5, 1.5, smoothstep(0.1, 0.25, rB)) * mix(1.0, 0.8, uA);
+                half3 cB = mix(half3(0.498, 0.902, 1.0), half3(1.0), half(1.0 - smoothstep(0.15, 0.3, rB)));
+                bladeAcc = max(bladeAcc, cB * half(bB * cov));
+            }
+            continue;
+        }
         float3 o = Ri * ((ro - offW) / sc); float3 d = Ri * rd;
         float tt = length(o) - 1.5; float2 uv = float2(0); bool hit = false; float minD = 1e3; float2 nearUv = float2(0); float nearT = 0.0; float aaK = 1.0;
         for (int i = 0; i < 220; i++) {
@@ -379,6 +399,7 @@ half4 main(float2 fc){
             acc = c4.rgb * c4.a + acc * (1.0 - c4.a); accA = c4.a + accA * (1.0 - c4.a);
         }
     }
+    if (uBlade > 0.5 && uIdle > 0.5) return half4(bladeAcc, 1);   // r61: blade pass output
     acc *= half(radial);
     if (uLayer > 0.5 && uBlend < 0.5) return half4(acc, accA * half(radial));   // premultiplied, for layer OVER
     return half4(acc, 1);
