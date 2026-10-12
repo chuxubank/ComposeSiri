@@ -918,24 +918,24 @@ internal data class V11Petal(
     val seed: Double,
 )
 internal val V11_A = 0.88          // semi axis along the length (R) // ae-v12
-internal val V11_B = 0.566          // semi axis across (R) // ae-v12
+internal val V11_B = 0.66          // semi axis across (R) // ae-v12 // ae-v13
 internal var V11_OFF = 0.0        // disc centre shifted along its length so one end sits near the ball centre // ae-v11 tuned // ae-v12
 internal val V11_CAM = 5.85        // camera distance in R (AE 2700 / 461)
-internal val V11_GROUP_AXIS = arrayOf(doubleArrayOf(1.8952, -0.3300, -1.1176), doubleArrayOf(0.1698, 1.9073, -0.3075))   // ae-v11: searched for lowest pairwise overlap // ae-v12
+internal val V11_GROUP_AXIS = arrayOf(doubleArrayOf(2.5111, -0.4554, -2.4769), doubleArrayOf(-1.9069, -1.5195, 0.2601))   // ae-v11: searched for lowest pairwise overlap // ae-v12 // ae-v13
 internal val V11_GROUP_RATE = doubleArrayOf(45.0, -30.0)
-internal val V11_RHO = doubleArrayOf(0.0, 0.105, 0.21, 0.315, 0.42, 0.525, 0.63, 0.735, 0.84, 0.88, 0.92, 0.96, 1.0)
+internal val V11_RHO = doubleArrayOf(0.0, 0.105, 0.21, 0.315, 0.42, 0.525, 0.63, 0.735, 0.84, 0.88, 0.92, 0.94, 0.96, 0.97, 0.985, 1.0) // ae-v13
 internal const val V11_NT = 48
 private fun v11Lin(v: Double) = Math.pow(v, 2.2)
-internal val V11_RED = doubleArrayOf(v11Lin(0.878) * 1.4, v11Lin(0.157) * 1.4, v11Lin(0.235) * 1.4) // ae-v11: share balance gain // ae-v12
-internal val V11_BLUE = doubleArrayOf(v11Lin(0.29) * 0.7, v11Lin(0.482) * 0.7, v11Lin(1.0) * 0.7) // ae-v11: share balance gain // ae-v12
-internal val V11_CYAN = doubleArrayOf(v11Lin(0.24) * 0.85, v11Lin(0.86) * 0.85, v11Lin(0.80) * 0.85) // ae-v11: share balance gain // ae-v12
+internal val V11_RED = doubleArrayOf(v11Lin(0.878) * 1.8, v11Lin(0.157) * 1.8, v11Lin(0.235) * 1.8) // ae-v11: share balance gain // ae-v12 // ae-v13
+internal val V11_BLUE = doubleArrayOf(v11Lin(0.29) * 0.9, v11Lin(0.482) * 0.9, v11Lin(1.0) * 0.9) // ae-v11: share balance gain // ae-v12 // ae-v13
+internal val V11_CYAN = doubleArrayOf(v11Lin(0.24) * 1.2, v11Lin(0.86) * 1.2, v11Lin(0.80) * 1.2) // ae-v11: share balance gain // ae-v12 // ae-v13
 internal var V11_PETALS = listOf(
-    V11Petal(V11_RED, 0, 0.0, 20.0, 0.9, 3.0728, 0.3735, 0.0806, 1.0), // ae-v12
-    V11Petal(V11_RED, 1, 150.0, 200.0, 0.0, 2.6575, 1.4969, 0.2818, 2.0), // ae-v12
-    V11Petal(V11_BLUE, 1, 0.0, 20.0, 0.9, 5.3434, 3.1383, 6.0653, 3.0), // ae-v12
-    V11Petal(V11_BLUE, 0, 150.0, 200.0, 0.0, 5.7464, 2.9071, 1.6106, 4.0), // ae-v12
-    V11Petal(V11_CYAN, 0, 0.0, 20.0, 0.9, 2.1603, 6.0158, 4.7870, 5.0), // ae-v12
-    V11Petal(V11_CYAN, 1, 170.0, 190.0, 0.0, 2.9797, 4.8017, 4.8643, 6.0), // ae-v12
+    V11Petal(V11_RED, 0, 0.0, 20.0, 0.9, 0.5749, 0.2407, 0.7045, 1.0), // ae-v12 // ae-v13
+    V11Petal(V11_RED, 1, 150.0, 200.0, 0.0, 4.7289, 5.8691, 0.6012, 2.0), // ae-v12 // ae-v13
+    V11Petal(V11_BLUE, 1, 0.0, 20.0, 0.9, 4.0075, 4.0967, 3.3071, 3.0), // ae-v12 // ae-v13
+    V11Petal(V11_BLUE, 0, 150.0, 200.0, 0.0, 0.0242, 4.3500, 2.7026, 4.0), // ae-v12 // ae-v13
+    V11Petal(V11_CYAN, 0, 0.0, 20.0, 0.9, 5.8539, 6.2651, 3.9997, 5.0), // ae-v12 // ae-v13
+    V11Petal(V11_CYAN, 1, 170.0, 190.0, 0.0, 0.7288, 1.9942, 3.9569, 6.0), // ae-v12 // ae-v13
 )
 
 /** World-space mesh of petal p at time t: [V11_RHO.size][V11_NT] points, each DoubleArray(3) in units of R (camera on +z). */
@@ -948,14 +948,12 @@ internal fun v11PetalMesh(p: V11Petal, t: Double): Array<Array<DoubleArray>> {
         Array(V11_NT) { j ->
             val th = 2.0 * Math.PI * j / V11_NT
             val u = V11_RHO[i] * kotlin.math.cos(th); val v = V11_RHO[i] * kotlin.math.sin(th)
-            var x = V11_A * u; var y = V11_B * v; var z = 0.0
+            var x = V11_A * u; var y = V11_B * v * kotlin.math.sqrt(kotlin.math.max(1.0 - u * u, 0.0)); var z = 0.0 // ae-v13
             val ph = twRad * u / 2.0                      // Twist about the long axis
             val y2 = y * kotlin.math.cos(ph) - z * kotlin.math.sin(ph); val z2 = y * kotlin.math.sin(ph) + z * kotlin.math.cos(ph)
             y = y2; z = z2
             if (p.bendR > 0.0) {                          // Bend: long axis wrapped onto an arc of radius rb
-                val a = x / rb
-                x = rb * kotlin.math.sin(a)
-                z = z + rb * (1.0 - kotlin.math.cos(a)) - rb * (1.0 - kotlin.math.cos(V11_A / rb)) * 0.5
+                if (x > 0.0) { val a = x / rb; z += rb * (1.0 - kotlin.math.cos(a)); x = rb * kotlin.math.sin(a) } // ae-v13
             }
             x += V11_OFF
             doubleArrayOf(
@@ -990,8 +988,8 @@ internal fun v11Tri(buf: FloatArray, size: Int, x: DoubleArray, y: DoubleArray, 
     }
 }
 
-internal var V11_KTHICK = 5.5     // extruded thin disc: edge-on parts read brighter (1 + k (1 - |n.z|)^2) // ae-v12
-internal var V11_EXPO = 0.55       // AE Exposure // ae-v12
+internal var V11_KTHICK = 3.5     // extruded thin disc: edge-on parts read brighter (1 + k (1 - |n.z|)^2) // ae-v12 // ae-v13
+internal var V11_EXPO = 0.5       // AE Exposure // ae-v12 // ae-v13
 internal const val V11_OPACITY = 0.78
 
 /** Petal layer, linear RGB, Screen between petals. only >= 0: draw just that petal as a flat white footprint mask (overlap checks). */
@@ -1016,10 +1014,13 @@ internal fun v11PetalLayer(t: Double, size: Int, only: Int = -1): FloatArray {
             val nl = kotlin.math.sqrt(n0 * n0 + n1 * n1 + n2 * n2)
             val nz = if (i == 0 || nl < 1e-12) 1.0 else kotlin.math.abs(n2) / nl
             val thick = 1.0 + V11_KTHICK * (1.0 - nz) * (1.0 - nz)
-            val fog = 1.0 - ((-q[2]) / 2.17).coerceIn(0.0, 1.0)      // AE fog start 2700 (= camera distance), range 1000 (= 2.17 R)
+            val fog = 1.0 - ((-q[2]) / (2.17 * 1.3)).coerceIn(0.0, 1.0)      // AE fog start 2700 (= camera distance), range 1000 (= 2.17 R) // ae-v13
             val r = V11_RHO[i]
-            val f = ((r - 0.84) / 0.16).coerceIn(0.0, 1.0)
-            val a = Math.pow(r, 1.5) * (1.0 - f * f)                  // inverted circle mask: 0 at the centre -> 1 at the edge, outer feather 0.84..1.0
+            val fw = if (p.twHi > 100.0) 0.03 else 0.08          // outer feather: 1.5% (high-twist) / 4% (wide) of the diameter // ae-v13
+            val f = ((r - (1.0 - fw)) / fw).coerceIn(0.0, 1.0) // ae-v13
+            val uu = r * kotlin.math.cos(2.0 * Math.PI * j / V11_NT) // ae-v13
+            val sAx = (kotlin.math.abs(r * kotlin.math.sin(2.0 * Math.PI * j / V11_NT)) / kotlin.math.max(kotlin.math.sqrt(kotlin.math.max(1.0 - uu * uu, 0.0)), 1e-6)).coerceIn(0.0, 1.0) // ae-v13
+            val a = if (i == 0) 0.2 else (0.2 + 0.8 * sAx) * (1.0 - f * f)   // opacity by distance to the central axis: 20% on the axis -> 100% at the edge // ae-v13
             for (ch in 0..2) col[i][j][ch] = if (only >= 0) (if (a > 0.02) 1.0 else 0.0)
                 else (p.rgb[ch] * a * V11_OPACITY * fog * thick * V11_EXPO).coerceIn(0.0, 1.0)
         }
@@ -1034,11 +1035,11 @@ internal fun v11PetalLayer(t: Double, size: Int, only: Int = -1): FloatArray {
     return buf
 }
 
-internal var V11_CORE = 2.4        // additive white light core strength // ae-v12
+internal var V11_CORE = 0.7        // additive white light core strength // ae-v12 // ae-v13
 internal var V11_CORE_R = 0.18     // core radius (R) // ae-v12
-internal var V11_GLOW = doubleArrayOf(0.10, 0.08, 0.06, 0.05, 0.04, 0.03)   // weights for AE glow radii 30/57/80/111/150/200
+internal var V11_GLOW = doubleArrayOf(0.05, 0.04, 0.03, 0.025, 0.02, 0.015)   // weights for AE glow radii 30/57/80/111/150/200 // ae-v13
 internal var V11_GLOW_THR = 0.25
-internal var V11_RIM = 0.15        // faint red-blue glass rim light, band ~0.03 R // ae-v12
+internal var V11_RIM = 0.07        // faint red-blue glass rim light, band ~0.03 R // ae-v12 // ae-v13
 
 /** Linear-light base image (size*size*3): background gradient, petals (Screen), additive core, glass rim light. */
 internal fun v11Base(t: Double, size: Int): FloatArray {
