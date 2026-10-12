@@ -72,9 +72,9 @@ float profile(float u){
 float gLB = 1.0; float gWB = 1.0;   // r73: per-sheet idle length / width breathing, set in the sheet loop
 // ae-pipeline: loopable wiggle(freq, amp) stand-in: 1D noise with period 6 s (sum of 1/6, 2/6, 3/6 Hz harmonics, hashed phases), range ~[-1,1]
 float hashF(float n){ return fract(sin(n * 127.1) * 43758.5453); }
-float loopNoise6(float t, float seed){
-    float w = 6.2831853 / 6.0; float v = 0.0;
-    for (int h = 1; h <= 3; h++) { float fh = float(h); v += sin(w * fh * t + 6.2831853 * hashF(seed + fh * 7.13)) * (fh == 1.0 ? 0.6 : (fh == 2.0 ? 0.3 : 0.15)) ; }
+float loopNoise6(float t, float seed){   // ae-v2: period 12 s, harmonics 2..4 of 1/12 Hz (0.17-0.33 Hz ~ wiggle 0.2 Hz)
+    float w = 6.2831853 / 12.0; float v = 0.0;
+    for (int h = 2; h <= 4; h++) { float fh = float(h); v += sin(w * fh * t + 6.2831853 * hashF(seed + fh * 7.13)) * (fh == 2.0 ? 0.6 : (fh == 3.0 ? 0.3 : 0.15)); }
     return v / 1.05;
 }
 float gTwI = 0.1745;   // ae-pipeline: idle twist (rad over the half length), set in the sheet loop
@@ -206,9 +206,9 @@ half4 main(float2 fc){
         float3x3 R = rotZ(ang.z) * rotY(ang.y) * rotX(ang.x);
         if (uIdle > 0.001) {
             // ae-pipeline idle: AE group spin only (time*30 / time*45 / -time*30 / -time*45 per axis, table above), no hand-posed pitch/azimuth/roll and no sine sway.
-            // 6 s loop: every |rate| is snapped to 60 deg/s (one full turn per 6 s per axis); AE's 30/45 deg/s loop only every 12/8 s (LCM 24 s).
+            // 12 s loop (ae-v2): see rateQ
             float tI = uSpinT / 0.6;   // spinT runs at the idle speed 0.6 -> real seconds
-            float3 rateQ = sign(rate) * 60.0;
+            float3 rateQ = sign(rate) * mix(float3(30.0), float3(60.0), step(float3(40.0), abs(rate)));   // ae-v2: AE 30 -> 30 deg/s, 45 -> 60 deg/s, signs kept; 30 deg/s = 1 turn / 12 s, 60 = 2 turns -> 12 s loop
             float3 angI = off + rateQ * (PI/180.0) * tI;
             float3x3 RI = rotZ(angI.z) * rotY(angI.y) * rotX(angI.x);
             float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
@@ -225,7 +225,11 @@ half4 main(float2 fc){
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
         ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 0.5625 : k == 0 ? 0.875 : (k == 1 ? 0.975 : (k == 2 ? 0.94 : (k == 3 ? 0.9375 : (k == 4 ? 0.8125 : 0.75))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R // r67: big blue 0.78R // r69: blades k3/k5/k6 half-length 0.75R // r73: cyan fill k0 half-length 0.7R; blades k3/k5/k6 0.75/0.6/0.45R
         { float tB = uSpinT / 0.6; float bl = sin((mod(fk, 2.0) < 0.5 ? 1.0472 : 2.0944) * tB + fk * 2.3); gLB = (k == 3 || k == 5 || k == 6) ? 1.0 + 0.2 * uIdle * sin((k == 5 ? 2.0944 : 1.0472) * tB + fk * 1.3) : 1.0 - uIdle * 0.075 * (1.0 + bl); gWB = 1.0 + 0.15 * uIdle * sin((mod(fk, 3.0) < 1.0 ? 2.0944 : 1.0472) * tB + fk * 1.1 + 0.7); if (k == 2) { float s2 = sin(1.0472 * tB + 3.4 + uFPh.x); gLB = 1.0 - uIdle * 0.075 * (1.0 - s2); gWB = gLB; } bend += 0.08 * uIdle * sin((mod(fk, 2.0) < 0.5 ? 2.0944 : 1.0472) * tB + fk * 0.9 + 1.9); }   // r74: sheet length breathes inward only (0..-15%); blades +-20%; k2 size peaks when its roll is most edge-on (half a period from its face-on peak); bow +-0.08
-        if (uIdle > 0.5) { gLB = 1.0; gWB = 1.0; }   // ae-pipeline: no sine length/width breathing in idle (AE has none)
+        if (uIdle > 0.5) {   // ae-v2: half length 0.70-0.80 R, half width 0.45-0.55 R, no breathing
+            float hl = k == 0 ? 0.75 : (k == 1 ? 0.80 : (k == 2 ? 0.70 : (k == 3 ? 0.78 : (k == 4 ? 0.72 : 0.76))));
+            float hw2 = k == 0 ? 0.50 : (k == 1 ? 0.55 : (k == 2 ? 0.45 : (k == 3 ? 0.48 : (k == 4 ? 0.52 : 0.47))));
+            gLB = hl / 0.8; gWB = hw2 / 0.45; ws = 1.0;
+        }
         { float tW = uSpinT / 0.6;   // ae-pipeline: loopable wiggle(0.2,15) on twist [deg], wiggle(0.2,10) on bend [read as 0.10 R]
           gTwI = 0.1745 + uIdle * (15.0 * PI / 180.0) * loopNoise6(tW, fk * 3.1 + 1.0);
           bend += uIdle * 0.10 * loopNoise6(tW, fk * 5.7 + 11.0); }
@@ -235,6 +239,11 @@ half4 main(float2 fc){
         if (!(k == 3 || k == 5 || k == 6)) { float oa = k == 0 ? 3.927 : (k == 1 ? -1.5708 : (k == 2 ? 2.356 : (k == 4 ? 0.3 : 3.6))); float od = k == 0 ? 0.08 : (k == 1 ? 0.09 : (k == 2 ? 0.04 : (k == 4 ? 0.12 : 0.07))); offW += uIdle * od * float3(cos(oa), sin(oa), 0.0); }   // r65: fill sheets centred off the orb centre (0.2-0.28R, spread: k0 upper-right, k1 down, k2 upper-left, k4 right, k7 left-down); blades k3/k5/k6 still cross the centre // r66: offsets 0.15-0.2R // r67: k4 to upper-right, away from big blue // r68: only big red k2 offset cut (it reached 0.93R) // r73: cyan k0 lower-left // r74: offsets cut so offset + 0.1R drift keeps the outer edge <= 0.9R
         if (uIdle < 0.5)         { float tD = uSpinT / 0.6; float wD2 = (mod(fk, 2.0) < 0.5 ? 1.0472 : 2.0944) * (mod(fk, 3.0) < 1.5 ? 1.0 : -1.0); offW += uIdle * 0.1 * float3(cos(wD2 * tD + fk * 2.7 + (k == 2 ? uDPh.x : (k == 4 ? uDPh.y : 0.0))), sin(wD2 * tD + fk * 2.7 + (k == 2 ? uDPh.x : (k == 4 ? uDPh.y : 0.0))), 0.0); }   // r74: each sheet centre drifts on a 0.1R circle, own direction, 6 s or 3 s period
         if (k == 0) offW.z += uIdle * uK0Z;   // r74: cyan k0 pulled toward the camera so red sheets do not cover it
+        if (uIdle > 0.5) {   // ae-v2: hand offsets replaced; each sheet centre 0.15-0.25 R off the orb centre, directions 60 deg apart (+20 deg)
+            float oD = k == 0 ? 0.20 : (k == 1 ? 0.15 : (k == 2 ? 0.25 : (k == 3 ? 0.18 : (k == 4 ? 0.22 : 0.17))));
+            float oA = fk * 1.0472 + 0.35;
+            offW = oD * float3(cos(oA), sin(oA), 0.0);
+        }
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
         float pxW = 1.0 / (0.45 * uSize.x * uScale * mix(0.8, 0.9, uProc) * sizeI * sc) * 1.5;   // AA transition ~1.5 screen px
@@ -393,7 +402,7 @@ half4 main(float2 fc){
                     float rn = clamp(length(float2(2.0 * uv.x - 1.0, uv.y)), 0.0, 1.0);
                     col.rgb = half3(pow(baseC, half3(2.2)));
                     bri = mix(0.5, 1.0, wf) * fog;   // depth fog / far layer kept (AE Fog 100%)
-                    a = smoothstep(0.0, 1.0, rn) * aEdge * aaK * uBodyA;
+                    a = smoothstep(0.0, 1.0, rn) * aEdge * aaK * uBodyA * (1.0 - smoothstep(0.80, 0.85, rS));   // texture: 0 at sheet centre -> 1 at edge (checked); ae-v2: outer edge clipped by 0.85 R
                 }
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (uBlend > 0.5) {
@@ -463,8 +472,10 @@ internal fun renderSheetStills(
         uniform float2 uSize;
         uniform float uFade;
         uniform float uOver;
+        uniform float uNoGrade;
         half4 main(float2 c) {
             float rr = length(c - 0.5*uSize) / (0.45*uSize.x);
+            if (uNoGrade > 0.5) { half3 y = clamp(img.eval(c).rgb, 0.0, 1.0) * half(1.0 - smoothstep(1.0, 1.08, rr)); return half4(pow(y, half3(1.0 / 2.2)), 1); }   // ae-v2 idle: no ACES, no saturation x1.3, only sRGB encode
             half3 x = max(img.eval(c).rgb, half3(0)) * 0.765;   // exposure -15%
             x *= half((1.0 - smoothstep(1.0 + 0.5 * uOver, 1.08 + 0.5 * uOver, rr)) * uFade);
             x = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
@@ -516,6 +527,7 @@ internal fun renderSheetStills(
     Files.createDirectories(outDir)
     val n = (fps * seconds).toInt().coerceAtLeast(1)
     for (i in 0 until n) {
+        if (System.getenv("FRAMES") != null && i !in System.getenv("FRAMES")!!.split(",").map { it.trim().toInt() }) continue   // render only listed frames
         if (System.getenv("SKIP_EXISTING") == "1" && Files.exists(outDir.resolve("$prefix%03d.png".format(i)))) continue   // resume an interrupted render
         val t = i / fps
         val prm = paramsAt(i, t)
@@ -582,9 +594,13 @@ internal fun renderSheetStills(
         val scene = f16()
         val c = scene.canvas
         c.clear(Color.BLACK)
+        if (id > 0.5f) {   // ae-v2: base #2D2C32 at 0.35 opacity drawn first (linear light), sheets Screen on top
+            val lin = { v: Int -> Math.pow(v / 255.0, 2.2).toFloat() * 0.35f }
+            c.drawCircle(cx, cx, radius * 0.985f, Paint().apply { color4f = org.jetbrains.skia.Color4f(lin(0x2D), lin(0x2C), lin(0x32), 1f) })
+        }
         c.drawImage(bodyImg, 0f, 0f, Paint().apply {
             imageFilter = ImageFilter.makeBlur(mixF(0.6f, 0.001f, id), mixF(0.6f, 0.001f, id), FilterTileMode.DECAL)   // r37 idle: front sheets blur 0
-            blendMode = if (id > 0.5f) BlendMode.SRC_OVER else BlendMode.PLUS   // r54 idle: body OVER (shader already depth-sorted OVER); keep PLUS for non-idle HDR path
+            blendMode = if (id > 0.5f) BlendMode.SCREEN else BlendMode.PLUS   // ae-v2: Screen onto the base   // r54 idle: body OVER (shader already depth-sorted OVER); keep PLUS for non-idle HDR path
         })
         // r55 idle: blade soft glow = separate blade-only pass, 8px gaussian, PLUS back (no edge6 sampling)
         if (id > 0.5f && System.getenv("BLADES") == "1") {   // ae-pipeline: separate blade layer off (AE has none; blades come from side-on sheets under Screen)
@@ -627,7 +643,7 @@ internal fun renderSheetStills(
         }
         // Wide soft glow ~0.5 R, strength ~0.35, fast falloff.
         run {
-            val g = mixF(0.15f, 1.0f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))   // r56: centre soft glow stronger (radius stays 0.16R) for ~4% white star // r57: idle strength 1.0 // r57b: idle strength 2.0 (cap) - 1.0 gave ~1.5% white // r58: back to 1.0
+            val g = mixF(0.15f, 0.5f, id) * prm.core   // ae-v2: idle centre soft glow 1.0 -> 0.5 * (1f - kotlin.math.max(prm.move, prm.proc))   // r56: centre soft glow stronger (radius stays 0.16R) for ~4% white star // r57: idle strength 1.0 // r57b: idle strength 2.0 (cap) - 1.0 gave ~1.5% white // r58: back to 1.0
             if (g > 0.001f) {
                 // radial gradient instead of a mask-blurred circle (the blur produced a faint square box at small sizes)
                 val gs = (if (prm.coreScale >= 0f) prm.coreScale else 1f) * radius * mixF(0.5f, 0.25f, id)   // r64 idle: soft glow 0.25R
@@ -671,6 +687,7 @@ internal fun renderSheetStills(
         tb.uniform("uSize", size.toFloat(), size.toFloat())
         tb.uniform("uFade", prm.fade.coerceIn(0f, 1f))
         tb.uniform("uOver", prm.listen)
+        tb.uniform("uNoGrade", if (id > 0.5f) 1f else 0f)
         val fin = Surface.makeRasterN32Premul(size, size)
         fin.canvas.drawPaint(Paint().apply { shader = tb.makeShader() })
         val fc = fin.canvas
@@ -683,7 +700,7 @@ internal fun renderSheetStills(
             val ig = mixF(7f, 44f, id).toInt()
             val ib = mixF(13f, 50f, id).toInt()   // r46 idle: pure black #000000
             val ia = 255
-            color = (((ia * sh).toInt().coerceIn(0, 255)) shl 24) or (ir shl 16) or (ig shl 8) or ib
+            color = (((ia * sh * (1f - id)).toInt().coerceIn(0, 255)) shl 24) or (ir shl 16) or (ig shl 8) or ib   // ae-v2: idle base now drawn under the sheets
             blendMode = BlendMode.PLUS
             if (id < 0.99f) maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.01f * (1f - id) + 0.001f)
         })
