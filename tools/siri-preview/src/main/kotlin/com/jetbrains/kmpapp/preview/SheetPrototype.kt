@@ -941,7 +941,7 @@ internal var V11_PETALS = listOf(
 )
 
 /** World-space mesh of petal p at time t: [V11_RHO.size][V11_NT] points, each DoubleArray(3) in units of R (camera on +z). */
-internal var V11_BLADE_OFF = 0.35; internal var V11_WIDE_TILT = 65.0; internal var V11_WIDE_UP = 0.35; internal var V11_BACK_BEND = 0.15 // ae-v16
+internal var V11_BLADE_OFF = 0.35; internal var V11_WIDE_TILT = 65.0; internal var V11_WIDE_UP = 0.2; internal var V11_BACK_BEND = 0.15 // ae-v16 // ae-v17
 /** Blade azimuth by colour: red 90, blue 210, cyan 330 deg (three-point star). */ // ae-v16
 internal fun v11BladeAz(p: V11Petal): Double = if (p.rgb === V11_RED) 90.0 else if (p.rgb === V11_BLUE) 210.0 else 330.0 // ae-v16
 internal fun v11PetalMesh(p: V11Petal, t: Double): Array<Array<DoubleArray>> {
@@ -953,16 +953,16 @@ internal fun v11PetalMesh(p: V11Petal, t: Double): Array<Array<DoubleArray>> {
     val rot = if (isBlade) {   // blade: long axis in the screen plane at a fixed azimuth (+-25 deg drift), small tilt/roll wobble // ae-v16
         val az = Math.toRadians(v11BladeAz(p) + 25.0 * v11Wig(t, p.seed + 20.0)) // ae-v16
         v11Mul(v11RotAxis(zA, az), v11Mul(v11RotAxis(yA, Math.toRadians(15.0 * v11Wig(t, p.seed + 30.0))), v11RotAxis(xA, Math.toRadians(20.0 * v11Wig(t, p.seed + 40.0))))) // ae-v16
-    } else {                   // wide petal: spins in the screen plane at its group rate, tilted, centre raised (covers the upper hemisphere) // ae-v16
-        v11Mul(v11RotAxis(zA, Math.toRadians(V11_GROUP_RATE[p.group]) * t + p.ez), v11RotAxis(xA, Math.toRadians(V11_WIDE_TILT + 15.0 * v11Wig(t, p.seed + 50.0)))) // ae-v16
+    } else {                   // wide petal: 3D rotation about its group axis, centre raised V11_WIDE_UP // ae-v16 // ae-v17
+        v11Mul(v11RotAxis(V11_GROUP_AXIS[p.group], Math.toRadians(V11_GROUP_RATE[p.group]) * t), v11Euler(p.ex, p.ey, p.ez)) // ae-v16 // ae-v17
     } // ae-v16
     val shift = if (isBlade) doubleArrayOf(0.0, 0.0, 0.0) else doubleArrayOf(0.0, V11_WIDE_UP, 0.0) // ae-v16
     return Array(V11_RHO.size) { i ->
         Array(V11_NT) { j ->
             val th = 2.0 * Math.PI * j / V11_NT
             val u = V11_RHO[i] * kotlin.math.cos(th); val v = V11_RHO[i] * kotlin.math.sin(th)
-            var x = V11_A * u; var y = V11_B * v * (if (p.twHi > 100.0) kotlin.math.sqrt(kotlin.math.max(1.0 - u * u, 0.0)) else if (u > 0.0) Math.pow(kotlin.math.max(1.0 - u * u, 0.0), 0.2) else 1.0); var z = 0.0 // ae-v15
-            val ph = if (p.twHi > 100.0) Math.PI / 2.0 - twRad / 2.0 * kotlin.math.sign(u) * (1.0 - (1.0 - kotlin.math.abs(u)) * (1.0 - kotlin.math.abs(u))) else twRad * u / 2.0   // high-twist: twist concentrated at the centre (side-on there, ends face-on) // Twist about the long axis // ae-v14
+            var x = if (isBlade && u < 0.0) V11_BLADE_OFF * u else V11_A * u; var y = V11_B * v * (if (isBlade) (if (u < 0.0) 1.0 + u else kotlin.math.sqrt(kotlin.math.max(1.0 - u * u, 0.0))) else if (u > 0.0) Math.pow(kotlin.math.max(1.0 - u * u, 0.0), 0.2) else 1.0); var z = 0.0 // ae-v17: blade inner half shortened so its tip lands on the centre after the 0.35R shift, width tapers linearly to a sharp point
+            val ph = if (p.twHi > 100.0) Math.PI / 2.0 - Math.toRadians(20.0) * kotlin.math.max(0.0, 1.0 - (u + 1.0) / 0.6) else twRad * u / 2.0   // ae-v17: blades side-on along their whole length, only a 20 deg twist near the root (centre end)
             val y2 = y * kotlin.math.cos(ph) - z * kotlin.math.sin(ph); val z2 = y * kotlin.math.sin(ph) + z * kotlin.math.cos(ph)
             y = y2; z = z2
             if (p.back) z += V11_BACK_BEND * u * u; if (p.bendR > 0.0 && !p.back) {                          // Bend: long axis wrapped onto an arc of radius rb // ae-v16
@@ -1002,7 +1002,7 @@ internal fun v11Tri(buf: FloatArray, size: Int, x: DoubleArray, y: DoubleArray, 
 }
 
 internal var V11_KTHICK = 25.0     // extruded thin disc: edge-on parts read brighter (1 + k (1 - |n.z|)^2) // ae-v12 // ae-v13 // ae-v14 // ae-v15 // ae-v16
-internal var V11_EXPO = 0.25      // AE Exposure // ae-v12 // ae-v13 // ae-v14 // ae-v15 // ae-v16
+internal var V11_EXPO = 0.37      // AE Exposure // ae-v12 // ae-v13 // ae-v14 // ae-v15 // ae-v16 // ae-v17
 internal const val V11_OPACITY = 0.78
 internal var V11_SAT = 0.85; internal var V11_BACK_G = 0.35 // ae-v15
 
@@ -1054,7 +1054,7 @@ internal fun v11PetalLayer(t: Double, size: Int, only: Int = -1): FloatArray {
     return buf
 }
 
-internal var V11_CORE = 3.5        // additive white light core strength // ae-v12 // ae-v13 // ae-v14 // ae-v15 // ae-v16
+internal var V11_CORE = 1.0        // additive white light core strength // ae-v12 // ae-v13 // ae-v14 // ae-v15 // ae-v16 // ae-v17
 internal var V11_CORE_R = 0.18     // core radius (R) // ae-v12
 internal var V11_GLOW = doubleArrayOf(0.05, 0.04, 0.03, 0.025, 0.02, 0.015)   // weights for AE glow radii 30/57/80/111/150/200 // ae-v13
 internal var V11_GLOW_THR = 0.25
