@@ -14,9 +14,9 @@ import kotlin.math.sqrt
 
 /**
  * One translucent surface of the orb: an ellipse centred on the orb, with a texture that is clear
- * inside and dense towards the rim. The ellipse is twisted around its long axis by close to half a
- * turn and bent along it, so some part of it is always seen edge-on: a pinched neck that slides along
- * the surface as it turns, splitting it into a figure eight or a lobe with a curved, pointed tail.
+ * inside and dense towards the rim. The ellipse is twisted around its long axis and bent along it,
+ * so its two halves face different ways: it reads as a figure eight, or as a broad lobe whose other
+ * half is a blade.
  * The whole surface spins around one axis and slowly drifts around a second one.
  */
 internal class PetalSpec(
@@ -52,12 +52,37 @@ internal class Axis(x: Float, y: Float, z: Float) {
     val z = z / length
 }
 
+// Spin rates follow the time expressions in the reference After Effects project.
 internal val DefaultPetals = listOf(
     PetalSpec(
-        0.03f, 0.24f, 1.00f, width = 0.6f, length = 0.86f,
-        twist = 1.4f, twistOffset = 1.57f, bend = 0.6f,
-        spinAxis = Axis(0.3f, 1f, 0.4f), spin = 45f, driftAxis = Axis(1f, 0f, 0.3f), drift = 6f,
+        0.03f, 0.24f, 1.00f, width = 0.67f, length = 0.88f,
+        twist = 0.9f, twistOffset = 1.57f, bend = 0.25f,
+        spinAxis = Axis(0.3f, 1f, 0.4f), spin = 30f, driftAxis = Axis(1f, 0f, 0.3f), drift = 6f,
         tiltX = 0f, tiltY = 0f, tiltZ = 30f, seed = 0.7f,
+    ),
+    PetalSpec(
+        0.98f, 0.07f, 0.11f, width = 0.65f, length = 0.88f,
+        twist = 0.85f, twistOffset = 0.4f, bend = 0.3f,
+        spinAxis = Axis(-0.5f, 0.8f, 0.3f), spin = 45f, driftAxis = Axis(0.2f, 0.3f, 1f), drift = -5f,
+        tiltX = 60f, tiltY = 120f, tiltZ = 200f, seed = 1.9f,
+    ),
+    PetalSpec(
+        0.05f, 0.78f, 1.00f, width = 0.61f, length = 0.88f,
+        twist = 1.0f, twistOffset = 2.5f, bend = 0.2f,
+        spinAxis = Axis(0.7f, 0.4f, -0.6f), spin = -45f, driftAxis = Axis(0f, 1f, 0.3f), drift = 7f,
+        tiltX = 140f, tiltY = 250f, tiltZ = 100f, seed = 3.1f,
+    ),
+    PetalSpec(
+        0.02f, 0.70f, 0.55f, width = 0.67f, length = 0.88f,
+        twist = 0.8f, twistOffset = 1.0f, bend = 0.3f,
+        spinAxis = Axis(0.2f, -0.4f, 1f), spin = 80f, driftAxis = Axis(0.8f, 0.5f, 0f), drift = 5f,
+        tiltX = 220f, tiltY = 60f, tiltZ = 320f, seed = 4.4f,
+    ),
+    PetalSpec(
+        1.00f, 0.06f, 0.24f, width = 0.61f, length = 0.88f,
+        twist = 0.95f, twistOffset = 2.0f, bend = 0.25f,
+        spinAxis = Axis(-0.6f, -0.7f, 0.4f), spin = -30f, driftAxis = Axis(0.4f, 0f, 1f), drift = -6f,
+        tiltX = 300f, tiltY = 200f, tiltZ = 60f, seed = 5.6f,
     ),
 )
 
@@ -293,7 +318,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val FOG_FAR = 0.18f
         // After Effects' wiggle(0.2, 15) on the twist and bend angles.
         const val TWIST_WIGGLE = 0.26f
-        const val BEND_WIGGLE = 0.3f
+        const val BEND_WIGGLE = 0.15f
         const val WIGGLE_HZ = 0.2f
         const val RIM_GAIN = 0.36f
         const val RIM_BASE_R = 0.015f
