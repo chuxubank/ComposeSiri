@@ -70,11 +70,19 @@ float profile(float u){
 
 // r42 idle geometry: lens surface x=u*L, y=v*W0*sqrt(1-u^2), z=b*(u^2-0.3), 20 deg twist about the long axis; units = orb radius R
 float gLB = 1.0; float gWB = 1.0;   // r73: per-sheet idle length / width breathing, set in the sheet loop
+// ae-pipeline: loopable wiggle(freq, amp) stand-in: 1D noise with period 6 s (sum of 1/6, 2/6, 3/6 Hz harmonics, hashed phases), range ~[-1,1]
+float hashF(float n){ return fract(sin(n * 127.1) * 43758.5453); }
+float loopNoise6(float t, float seed){
+    float w = 6.2831853 / 6.0; float v = 0.0;
+    for (int h = 1; h <= 3; h++) { float fh = float(h); v += sin(w * fh * t + 6.2831853 * hashF(seed + fh * 7.13)) * (fh == 1.0 ? 0.6 : (fh == 2.0 ? 0.3 : 0.15)) ; }
+    return v / 1.05;
+}
+float gTwI = 0.1745;   // ae-pipeline: idle twist (rad over the half length), set in the sheet loop
 float sheetSdfIdle(float3 p, float b, out float2 uv){
     float L = 0.8 * gLB; float W0 = 0.45 * gWB;   // r51b: W0 0.45R
     float u = clamp(p.x / L, -1.0, 1.0);   // r45: centred lens
     float3 q = float3(p.x, p.y, p.z - b * (u*u - 0.3));
-    float a = 0.1745 * u;
+    float a = gTwI * u;   // ae-pipeline: twist from the loop (was fixed 0.1745)
     float c = cos(a), s = sin(a);
     float2 yz = float2(c*q.y + s*q.z, -s*q.y + c*q.z);
     float w = W0 * pow(max(1.0 - u*u, 0.0), 0.6);   // r49: (1-u^2)^1.2, tips close to 0 // r52: ^0.6 round petals
@@ -146,6 +154,7 @@ half4 main(float2 fc){
     for (int k = 0; k < 8; k++) {
         if (float(k) >= uCount) break;
         float fk = float(k);
+        if (k >= 6) break;   // ae-pipeline: AE uses 6 sheets (k6/k7 idle extras removed)
         if (k >= 6 && uIdle < 0.5) break;   // r60: k6,k7 idle-only   // r51c: 7th sheet is idle-only
         float t = uTime;
         // AE: time*45+value / -time*30+value deg/s, counter-rotating groups; wiggle(0.2,10/15)
@@ -196,28 +205,12 @@ half4 main(float2 fc){
         float rimMul = k >= 4 ? 0.0 : 0.5;
         float3x3 R = rotZ(ang.z) * rotY(ang.y) * rotX(ang.x);
         if (uIdle > 0.001) {
-            // r38 idle: every sheet folds slowly the same way about one shared axis (per-sheet axis within ~11 deg of it, <= 14 deg/s)
-            float3 A = normalize(float3(0.15, 0.7, 0.7));
-            float3 ax = normalize(A + 0.2 * float3(cos(fk*1.047), 0.0, sin(fk*1.047)));
+            // ae-pipeline idle: AE group spin only (time*30 / time*45 / -time*30 / -time*45 per axis, table above), no hand-posed pitch/azimuth/roll and no sine sway.
+            // 6 s loop: every |rate| is snapped to 60 deg/s (one full turn per 6 s per axis); AE's 30/45 deg/s loop only every 12/8 s (LCM 24 s).
             float tI = uSpinT / 0.6;   // spinT runs at the idle speed 0.6 -> real seconds
-            float wD = k == 0 ? 14.0 : (k == 1 ? 11.0 : (k == 2 ? 13.0 : (k == 5 ? 12.0 : 0.0)));
-            float th0 = k == 0 ? 0.0 : (k == 1 ? 2.356 : (k == 2 ? 3.1416 : 0.0));   // r39: phases so >=4 edge-on rims cross the centre
-            float th = th0 + mix(wD * (PI/180.0), sign(wD) * 1.0472, uIdle) * tI;
-            if (k == 3 || k == 4 || k == 5) th = 0.2 * sin(1.0472 * tI + fk);   // held near edge-on (base pose below), <= 3.5 deg/s
-            float gam = k == 0 ? 0.2 : (k == 1 ? 1.3 : (k == 2 ? 2.4 : (k == 3 ? 0.75 : (k == 4 ? 1.85 : 2.95))));
-            float3x3 RI = rotAxis(ax, th) * ((k == 3 || k == 4 || k == 5) ? rotX(1.5708) : float3x3(1,0,0, 0,1,0, 0,0,1)) * rotZ(gam);
-            // r43c idle: long axis pitched 35..80 deg out of the screen plane, random azimuth (drift 3 deg/s); sheet rolls about its long axis <= 14 deg/s, phases staggered so 2-3 sheets are near edge-on (|n.v| < 0.3) at any time
-            float pitI = (k == 6 || k == 7) ? 0.1745 : k == 0 ? 0.2094 : (k == 1 ? 0.1745 : (k == 2 ? 0.1745 : (k == 3 ? 0.3491 : (k == 4 ? 0.1745 : 0.3054))));   // r50: blades k3/k5 pitch 20/17.5 deg so they project long (~0.75R) // r51e k6 pitch 10
-            float psiI = (k == 7 ? 1.0 : k == 6 ? 2.269 : (k == 0 ? 0.349 : (k == 1 ? 2.443 : (k == 2 ? 1.92 : (k == 3 ? 1.396 : (k == 4 ? 2.97 : 3.229)))))) + 1.0472 * tI;   // r71: one full turn per 6 s
-            if (k == 3 || k == 5 || k == 6) psiI += (k == 3 ? 0.0 : (k == 5 ? -2.0944 : 1.0472)) * tI;   // r74: blades spin on their own: +1 / -1 / +2 turns per 6 s (common drift is +1 turn)
-            psiI += (k == 3 ? 0.1745 * sin(1.0472 * tI) : (k == 5 ? 0.1745 * sin(2.0944 * tI + 1.0) : (k == 6 ? 0.1745 * sin(3.1416 * tI + 2.0) : 0.0)));   // r72: blades kept halves at ~0/105/230 deg, each wobbles +-10 deg with 6/3/2 s periods (seamless at 6 s)
-            if (k == 4) psiI = 0.6 + 0.436 * sin(1.0472 * tI);   // r68: k4 azimuth held upper-right +-25 deg, no global drift   // r51: azimuth drift 13 deg/s (was 3 deg/s; with rolls held, frames looked frozen) // r51e // r52: reds moved off the blue axes (lens axis repeats every 180 deg; 4.538/5.585 coincided with blues k3/k1) // r59: k6 axis ~60 deg from both other blades
-            float rolI = (k == 7) ? (0.50 + 0.5236 * sin(1.0472 * tI + 7.0 + uFPh.z)) : (k == 6) ? (1.5708 + 0.08 * sin(1.0472 * tI + 6.0)) : (k == 0 || k == 1 || k == 2 || k == 4) ? ((k == 0 ? 0.0 : (k == 1 ? -0.49 : (k == 2 ? 0.25 : -0.52))) + 0.5236 * sin(1.0472 * tI + fk * 1.7 + (k == 0 ? uK0Ph : (k == 2 ? uFPh.x : (k == 4 ? uFPh.y : 0.0))))) : ((k == 3 ? 1.5708 : -1.5708) + 0.08 * sin(1.0472 * tI + fk));   // r49: k0/k1/k2/k4 held 25-35 deg off the view (half-side faces); k3/k5 roll for edge blades, phases searched so both stay side-on >0.6 // r50: blades held edge-on (roll 90 +-15 deg, <=5 deg/s) -> always side-on > 0.75 // r51e k6 held ~31 deg off view // r52: red k2 near face-on (~14 deg) // r59: k6 becomes the 3rd edge-on blade (was half-side; only 2 sheets had side>0.75 in all 50 frames) // r60: blade roll +-15 deg -> +-4.6 deg; the +-15 deg roll pushed side below 0.9 so core lines faded (white drop after 1 s) // r71: fill sheets roll +-30 deg per 6 s; blades keep +-4.6 deg so side stays >0.9 (no fade-out/dotted lines) // r72: cyan fill k0 rolls +-30 deg around face-on (phase +90 deg) so cyan never collapses
-            float3 lI = float3(cos(pitI) * cos(psiI), cos(pitI) * sin(psiI), sin(pitI));
-            float3 m2I = normalize(cross(lI, float3(0.0, 0.0, 1.0)));
-            float3 m1I = cross(m2I, lI);
-            float3 nI = cos(rolI) * m1I + sin(rolI) * m2I;
-            RI = float3x3(lI, cross(nI, lI), nI);
+            float3 rateQ = sign(rate) * 60.0;
+            float3 angI = off + rateQ * (PI/180.0) * tI;
+            float3x3 RI = rotZ(angI.z) * rotY(angI.y) * rotX(angI.x);
             float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
             float3 c0 = normalize(Rm[0]); float3 c1 = normalize(Rm[1] - dot(Rm[1], c0) * c0); float3 c2 = cross(c0, c1);
             R = float3x3(c0, c1, c2);
@@ -232,11 +225,15 @@ half4 main(float2 fc){
         offW *= 1.0 - uIdle;   // r42 idle: lens bow b = 0.15..0.25, every sheet through the centre
         ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 0.5625 : k == 0 ? 0.875 : (k == 1 ? 0.975 : (k == 2 ? 0.94 : (k == 3 ? 0.9375 : (k == 4 ? 0.8125 : 0.75))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R // r67: big blue 0.78R // r69: blades k3/k5/k6 half-length 0.75R // r73: cyan fill k0 half-length 0.7R; blades k3/k5/k6 0.75/0.6/0.45R
         { float tB = uSpinT / 0.6; float bl = sin((mod(fk, 2.0) < 0.5 ? 1.0472 : 2.0944) * tB + fk * 2.3); gLB = (k == 3 || k == 5 || k == 6) ? 1.0 + 0.2 * uIdle * sin((k == 5 ? 2.0944 : 1.0472) * tB + fk * 1.3) : 1.0 - uIdle * 0.075 * (1.0 + bl); gWB = 1.0 + 0.15 * uIdle * sin((mod(fk, 3.0) < 1.0 ? 2.0944 : 1.0472) * tB + fk * 1.1 + 0.7); if (k == 2) { float s2 = sin(1.0472 * tB + 3.4 + uFPh.x); gLB = 1.0 - uIdle * 0.075 * (1.0 - s2); gWB = gLB; } bend += 0.08 * uIdle * sin((mod(fk, 2.0) < 0.5 ? 2.0944 : 1.0472) * tB + fk * 0.9 + 1.9); }   // r74: sheet length breathes inward only (0..-15%); blades +-20%; k2 size peaks when its roll is most edge-on (half a period from its face-on peak); bow +-0.08
+        if (uIdle > 0.5) { gLB = 1.0; gWB = 1.0; }   // ae-pipeline: no sine length/width breathing in idle (AE has none)
+        { float tW = uSpinT / 0.6;   // ae-pipeline: loopable wiggle(0.2,15) on twist [deg], wiggle(0.2,10) on bend [read as 0.10 R]
+          gTwI = 0.1745 + uIdle * (15.0 * PI / 180.0) * loopNoise6(tW, fk * 3.1 + 1.0);
+          bend += uIdle * 0.10 * loopNoise6(tW, fk * 5.7 + 11.0); }
         offW += uIdle * (k == 7 ? 0.05 : k == 6 ? 0.05 : k == 0 ? 0.08 : (k == 1 ? -0.10 : (k == 2 ? 0.06 : (k == 3 ? -0.04 : (k == 4 ? 0.10 : -0.07))))) * (R * float3(1.0, 0.0, 0.0));   // r50 idle: fixed per-sheet shift along the long axis within +-0.1R // r51e
         if (k == 1) offW += float3(0.0, 0.0, mix(0.22, 0.0, uIdle) * q1);   // idle: less camera bias so RGB take turns
         if (k == 2) offW += float3(0.0, 0.0, 0.25 * uIdle);   // r52: face-on red sits in front
         if (!(k == 3 || k == 5 || k == 6)) { float oa = k == 0 ? 3.927 : (k == 1 ? -1.5708 : (k == 2 ? 2.356 : (k == 4 ? 0.3 : 3.6))); float od = k == 0 ? 0.08 : (k == 1 ? 0.09 : (k == 2 ? 0.04 : (k == 4 ? 0.12 : 0.07))); offW += uIdle * od * float3(cos(oa), sin(oa), 0.0); }   // r65: fill sheets centred off the orb centre (0.2-0.28R, spread: k0 upper-right, k1 down, k2 upper-left, k4 right, k7 left-down); blades k3/k5/k6 still cross the centre // r66: offsets 0.15-0.2R // r67: k4 to upper-right, away from big blue // r68: only big red k2 offset cut (it reached 0.93R) // r73: cyan k0 lower-left // r74: offsets cut so offset + 0.1R drift keeps the outer edge <= 0.9R
-        { float tD = uSpinT / 0.6; float wD2 = (mod(fk, 2.0) < 0.5 ? 1.0472 : 2.0944) * (mod(fk, 3.0) < 1.5 ? 1.0 : -1.0); offW += uIdle * 0.1 * float3(cos(wD2 * tD + fk * 2.7 + (k == 2 ? uDPh.x : (k == 4 ? uDPh.y : 0.0))), sin(wD2 * tD + fk * 2.7 + (k == 2 ? uDPh.x : (k == 4 ? uDPh.y : 0.0))), 0.0); }   // r74: each sheet centre drifts on a 0.1R circle, own direction, 6 s or 3 s period
+        if (uIdle < 0.5)         { float tD = uSpinT / 0.6; float wD2 = (mod(fk, 2.0) < 0.5 ? 1.0472 : 2.0944) * (mod(fk, 3.0) < 1.5 ? 1.0 : -1.0); offW += uIdle * 0.1 * float3(cos(wD2 * tD + fk * 2.7 + (k == 2 ? uDPh.x : (k == 4 ? uDPh.y : 0.0))), sin(wD2 * tD + fk * 2.7 + (k == 2 ? uDPh.x : (k == 4 ? uDPh.y : 0.0))), 0.0); }   // r74: each sheet centre drifts on a 0.1R circle, own direction, 6 s or 3 s period
         if (k == 0) offW.z += uIdle * uK0Z;   // r74: cyan k0 pulled toward the camera so red sheets do not cover it
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
@@ -378,7 +375,7 @@ half4 main(float2 fc){
                 float aEdge = mix(clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0), smoothstep(0.0, 0.08, (1.0 - abs(uv.y)) * sheetHalfW(pos, ws)), uIdle);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px // r64: outer feather 0.04R
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
                 a = mix(a, aSilk, uIdle);
-                a *= mix(1.0, 1.0 - smoothstep(0.85, 0.92, sideS), uIdle * (1.0 - uBlade));   // r62: near edge-on sheet bodies fade out in the main pass; their 2.5px slab was hit only by scattered rays (faint cyan dotted line) and the screen-space core line replaces them // r64: only the last few degrees fade (glow covers them) // r66: fade from 0.85
+                a *= mix(1.0, 1.0 - smoothstep(0.85, 0.92, sideS), 0.0 * uIdle * (1.0 - uBlade));   // ae-pipeline: no blade layer -> keep side-on bodies   // r62: near edge-on sheet bodies fade out in the main pass; their 2.5px slab was hit only by scattered rays (faint cyan dotted line) and the screen-space core line replaces them // r64: only the last few degrees fade (glow covers them) // r66: fade from 0.85
                 float corePx = abs(uv.y) * sheetHalfW(pos, ws) * abs(nW.z) / max(pxW / 1.5, 1e-6); float uAx = abs(2.0 * uv.x - 1.0); float coreHW = mix(2.0, 0.75, uAx) + uIdle * (1.0 - smoothstep(0.12, 0.18, rS)); float coreK = smoothstep(0.75, 0.9, sideS) * (1.0 - smoothstep(coreHW - 0.5, coreHW + 0.25, corePx)); if (uBlade > 0.5) { a *= smoothstep(0.7, 0.85, sideS); bri = 1.0; }   // r64: blade pass = side-on sheet bodies (for the soft glow) // r56: blade pass keeps only the projected spine of sheets with side > 0.85, <= 3 px wide // r57: soft side fade 0.75-0.9; width 4px at centre -> 1.5px at tips, brighter at centre // r58: core 2.0 within 0.1R, back to 1.5 by 0.25R // r59: centre 2.5 // r60: half width 3px within 0.15R
                 bri = min(bri, mix(1e3, 1.1, uRes));   // result: no fully white sheet bodies
                 // edge-on blades go white; pre-cancel the final x1.3 saturation by the same amount
@@ -392,9 +389,15 @@ half4 main(float2 fc){
                 half lc = dot(col.rgb, half3(0.2126, 0.7152, 0.0722));
                 col.rgb = max(mix(half3(lc), col.rgb, half(mix(1.0, 1.0/1.3, wm))), half3(0));
                 if (uBlade > 0.5) col.rgb = mix(half3(0.498, 0.902, 1.0), half3(1.0), half(whiteR));   // r56: core line white within 0.25R, bright cyan #7FE6FF outside
+                if (uIdle > 0.5 && uBlade < 0.5) {   // ae-pipeline: no lighting; AE texture = white, inverted circle mask, feather 1000 -> alpha 0 at the centre rising to 1 at the edge, times sheet colour
+                    float rn = clamp(length(float2(2.0 * uv.x - 1.0, uv.y)), 0.0, 1.0);
+                    col.rgb = half3(pow(baseC, half3(2.2)));
+                    bri = mix(0.5, 1.0, wf) * fog;   // depth fog / far layer kept (AE Fog 100%)
+                    a = smoothstep(0.0, 1.0, rn) * aEdge * aaK * uBodyA;
+                }
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (uBlend > 0.5) {
-                    half3 e = min(c4.rgb * c4.a, half3(1.0));
+                    half3 e = min(c4.rgb * c4.a * half(mix(1.0, 0.78, uIdle)), half3(1.0));   // ae-pipeline: AE texture opacity 78%
                     acc = acc + e - acc * e;          // Screen
                 } else {
                     for (int j = 0; j < 8; j++) { if (j == k) { dd6[j] = tt; cc6[j] = c4; } }
@@ -541,7 +544,7 @@ internal fun renderSheetStills(
             b.uniform("uGather", prm.gather)
             b.uniform("uOrbit", prm.orbit)
             b.uniform("uTangle", prm.tangle)
-            b.uniform("uBlend", (System.getenv("BLEND") ?: "0").toFloat())
+            b.uniform("uBlend", (System.getenv("BLEND") ?: "1").toFloat())   // ae-pipeline: Screen by default (AE)
             b.uniform("uLayer", layer)
             b.uniform("uGrey", if (prm.grey >= 0f) prm.grey else prm.proc)
             b.uniform("uListen", prm.listen)
@@ -583,7 +586,7 @@ internal fun renderSheetStills(
             blendMode = if (id > 0.5f) BlendMode.SRC_OVER else BlendMode.PLUS   // r54 idle: body OVER (shader already depth-sorted OVER); keep PLUS for non-idle HDR path
         })
         // r55 idle: blade soft glow = separate blade-only pass, 8px gaussian, PLUS back (no edge6 sampling)
-        if (id > 0.5f) {
+        if (id > 0.5f && System.getenv("BLADES") == "1") {   // ae-pipeline: separate blade layer off (AE has none; blades come from side-on sheets under Screen)
             val bladeImg = pass(0f, 0f, 1f)
             val bPx = 16f * size / 870f   // r67: 16px glow x0.6
             c.drawImage(bladeImg, 0f, 0f, Paint().apply { blendMode = BlendMode.PLUS })   // r66: sharp core line
@@ -675,9 +678,9 @@ internal fun renderSheetStills(
         // Ball base: deep blue #0B1020 under everything; inner rim glow (0.8..1.0 R) from blurred sheet colour.
         val sh = prm.shell.coerceIn(0f, 1f)
         fc.drawCircle(cx, cx, radius * 0.985f, Paint().apply {
-            val ir = mixF(5f, 0f, id).toInt()
-            val ig = mixF(7f, 0f, id).toInt()
-            val ib = mixF(13f, 0f, id).toInt()   // r46 idle: pure black #000000
+            val ir = mixF(5f, 45f, id).toInt()   // ae-pipeline: idle base #2D2C32 (AE L2 fill)
+            val ig = mixF(7f, 44f, id).toInt()
+            val ib = mixF(13f, 50f, id).toInt()   // r46 idle: pure black #000000
             val ia = 255
             color = (((ia * sh).toInt().coerceIn(0, 255)) shl 24) or (ir shl 16) or (ig shl 8) or ib
             blendMode = BlendMode.PLUS
