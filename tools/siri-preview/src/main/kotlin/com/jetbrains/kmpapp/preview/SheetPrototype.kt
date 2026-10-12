@@ -1005,6 +1005,8 @@ internal fun v11Tri(buf: FloatArray, size: Int, x: DoubleArray, y: DoubleArray, 
     }
 }
 
+internal var V11_WIDE_FEATHER0 = 0.93 // wide petals: outer feather starts here (crisp rim) // ae-v20
+internal var V11_WIDE_POW = 3.0      // wide petals: alpha ~ r^pow, more transparent interior // ae-v20
 internal var V11_KTHICK = 5.5     // extruded thin disc: edge-on parts read brighter (1 + k (1 - |n.z|)^2); 1 + k must stay <= 8 // ae-v12 // ae-v20
 internal var V11_EXPO = 0.55       // AE Exposure // ae-v12
 internal const val V11_OPACITY = 0.78
@@ -1033,8 +1035,10 @@ internal fun v11PetalLayer(t: Double, size: Int, only: Int = -1): FloatArray {
             val thick = 1.0 + kotlin.math.min(V11_KTHICK, 7.0) * (1.0 - nz) * (1.0 - nz) // ae-v20
             val fog = 1.0 - ((-q[2]) / 2.17).coerceIn(0.0, 1.0)      // AE fog start 2700 (= camera distance), range 1000 (= 2.17 R)
             val r = V11_RHO[i]
-            val f = ((r - 0.84) / 0.16).coerceIn(0.0, 1.0)
-            val a = Math.pow(r, 1.5) * (1.0 - f * f)                  // inverted circle mask: 0 at the centre -> 1 at the edge, outer feather 0.84..1.0
+            val wide = p.twHi <= 100.0 // ae-v20
+            val f0 = if (wide) V11_WIDE_FEATHER0 else 0.84 // ae-v20
+            val f = ((r - f0) / (1.0 - f0)).coerceIn(0.0, 1.0)
+            val a = Math.pow(r, if (wide) V11_WIDE_POW else 1.5) * (1.0 - f * f) // inverted circle mask: 0 at the centre -> 1 at the edge, outer feather f0..1.0 // ae-v20
             for (ch in 0..2) col[i][j][ch] = if (only >= 0) (if (a > 0.02) 1.0 else 0.0)
                 else p.rgb[ch] * a * V11_OPACITY * fog * thick * V11_EXPO // ae-v20: HDR, no per-vertex clamp
         }
