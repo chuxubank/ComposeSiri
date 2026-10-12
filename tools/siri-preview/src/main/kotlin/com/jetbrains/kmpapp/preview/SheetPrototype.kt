@@ -214,6 +214,7 @@ half4 main(float2 fc){
             if (k == 2) { rateQ = float3(-30.0, -30.0, 30.0);  offI = float3(2.408, 2.427, 2.2); }
             if (k == 3) { rateQ = float3(-60.0, -60.0, 60.0);  offI = float3(0.125, 0.104, 4.0); }
             if (k == 4) { rateQ = float3(-30.0, 30.0, -60.0);  offI = float3(3.995, 2.301, 0.5); }
+            if (k == 5) { rateQ = float3(30.0, -60.0, 60.0);  offI = float3(2.0, 1.2, 2.9); }   // ae-v4: deep blue k5 spins/phases offset from blue k1 (k1 = -60,30,-30 deg/s); 30/60 only -> 12 s loop
             float3 angI = offI + rateQ * (PI/180.0) * tI;
             float3x3 RI = rotZ(angI.z) * rotY(angI.y) * rotX(angI.x);
             float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
@@ -301,7 +302,7 @@ half4 main(float2 fc){
         if (uIdle > 0.5 && k == 5) baseC = half3(0.235, 0.784, 0.94);   // r46: sixth sheet cyan #3CC8F0
         if (uIdle > 0.5 && k == 6) baseC = half3(0.184, 0.42, 1.0);   // r51e: 7th sheet blue #2F6BFF
         if (uIdle > 0.5 && k == 7) baseC = half3(0.184, 0.42, 1.0);   // r60: 8th sheet half-side blue fill
-        if (uIdle > 0.5) { if (k == 2 || k == 3 || k == 4) baseC = half3(1.0, 0.353, 0.431);   /* ae-v3: k3 blue -> red (3 reds) */ else if (k == 0 || k == 5) baseC = half3(0.373, 0.89, 0.91); else baseC = half3(0.29, 0.482, 1.0); }   // r64: red #FF5A6E, cyan #5FE3E8, blue #4A7BFF
+        if (uIdle > 0.5) { if (k == 2 || k == 3 || k == 4) baseC = half3(1.0, 0.353, 0.431);   /* ae-v3: k3 blue -> red (3 reds) */ else if (k == 5) baseC = half3(0.227, 0.357, 1.0); /* ae-v4: k5 cyan -> deep blue #3A5BFF */ else if (k == 0) baseC = half3(0.373, 0.89, 0.91); else baseC = half3(0.29, 0.482, 1.0); }   // r64: red #FF5A6E, cyan #5FE3E8, blue #4A7BFF
         if (uIdle > 0.5) { half lumC = dot(baseC, half3(0.299, 0.587, 0.114)); baseC = mix(half3(lumC), baseC, 0.85) * 0.9; }   // r71: face saturation -15%, value -10%
         half4 col = half4(pow(baseC, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
@@ -386,7 +387,7 @@ half4 main(float2 fc){
                 float aOrient = mix(mix(0.5, ((k == 2 || k == 4) ? 0.85 : (k == 0 ? 0.6 : 0.55)), uIdle), 1.0, pow(clamp(sideP, 0.0, 1.0), 0.85));   // r53: face-on red opacity 0.85 // r64: face opacity 0.55 for all sheets // r65: face-on red back to 0.85 // r66: k4 0.85
                 if (k == 1 || k == 3 || k == 6 || k == 7) aOrient *= mix(1.0, mix(0.3 / 0.55, 1.0, smoothstep(0.1, 0.2, rS)), uIdle);   // r69: blue faces 0.3 opacity inside 0.2R
                 float aInward = mix(mix(1.0, 0.22, pow(v, 0.6)), 1.0, uIdle);   // r51 idle: the one-sided fade made half of each lens ~invisible, so the visible shape was a half-lens cut along its straight centreline (the straight edges / hexagram outline)
-                float aEdge = mix(clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0), smoothstep(0.0, 0.08, (1.0 - abs(uv.y)) * sheetHalfW(pos, ws)), uIdle);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px // r64: outer feather 0.04R
+                float aEdge = mix(clamp((1.0 - abs(uv.y)) * sheetHalfW(pos, ws) / (pxW / 1.5), 0.0, 1.0), smoothstep(0.0, 0.04, (1.0 - abs(uv.y)) * sheetHalfW(pos, ws)), uIdle);   // r39: feather 1 px   // r37 idle: edge feather ~1.5 px // r64: outer feather 0.04R // ae-v4: idle edge feather 0.08R -> 0.04R
                 float aSilk = aOrient * aInward * aEdge * fog * aaK * uBodyA;   // r42 idle: no radial opacity fade
                 a = mix(a, aSilk, uIdle);
                 a *= mix(1.0, 1.0 - smoothstep(0.85, 0.92, sideS), 0.0 * uIdle * (1.0 - uBlade));   // ae-pipeline: no blade layer -> keep side-on bodies   // r62: near edge-on sheet bodies fade out in the main pass; their 2.5px slab was hit only by scattered rays (faint cyan dotted line) and the screen-space core line replaces them // r64: only the last few degrees fade (glow covers them) // r66: fade from 0.85
@@ -407,6 +408,7 @@ half4 main(float2 fc){
                     float rn = clamp(length(float2(2.0 * uv.x - 1.0, uv.y)), 0.0, 1.0);
                     col.rgb = half3(pow(baseC, half3(2.2)));
                     bri = mix(0.5, 1.0, wf) * fog;   // depth fog / far layer kept (AE Fog 100%)
+                    bri *= 1.0 + 0.3 * smoothstep(0.75, 0.95, rn);   // ae-v4: brightest outer ring of the radial texture x1.3
                     a = smoothstep(0.0, 1.0, rn) * aEdge * aaK * uBodyA * (1.0 - smoothstep(0.80, 0.85, rS));   // texture: 0 at sheet centre -> 1 at edge (checked); ae-v2: outer edge clipped by 0.85 R
                 }
                 half4 c4 = half4(col.rgb * half(bri), half(a));
@@ -648,12 +650,12 @@ internal fun renderSheetStills(
         }
         // Wide soft glow ~0.5 R, strength ~0.35, fast falloff.
         run {
-            val g = mixF(0.15f, 0.5f, id) * prm.core   // ae-v2: idle centre soft glow 1.0 -> 0.5 * (1f - kotlin.math.max(prm.move, prm.proc))   // r56: centre soft glow stronger (radius stays 0.16R) for ~4% white star // r57: idle strength 1.0 // r57b: idle strength 2.0 (cap) - 1.0 gave ~1.5% white // r58: back to 1.0
+            val g = mixF(0.15f, 0.8f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))   // ae-v2: idle centre soft glow 1.0 -> 0.5   // r56: centre soft glow stronger (radius stays 0.16R) for ~4% white star // r57: idle strength 1.0 // r57b: idle strength 2.0 (cap) - 1.0 gave ~1.5% white // r58: back to 1.0 // ae-v4: idle centre soft glow 0.5 -> 0.8
             if (g > 0.001f) {
                 // radial gradient instead of a mask-blurred circle (the blur produced a faint square box at small sizes)
                 val gs = (if (prm.coreScale >= 0f) prm.coreScale else 1f) * radius * mixF(0.5f, 0.25f, id)   // r64 idle: soft glow 0.25R
                 val gb = RuntimeShaderBuilder(glowFx)
-                gb.uniform("uC", cx, cx); gb.uniform("uR", gs); gb.uniform("uG", g); gb.uniform("uE", mixF(9f, 3f, id)); gb.uniform("uT", mixF(1f, 0.85f, id), mixF(1f, 0.97f, id), 1f)   // r57 idle: slow falloff exp(-3x^2)
+                gb.uniform("uC", cx, cx); gb.uniform("uR", gs); gb.uniform("uG", g); gb.uniform("uE", mixF(9f, 3f, id)); gb.uniform("uT", mixF(1f, 0.70f, id), mixF(1f, 0.97f, id), 1f)   // r57 idle: slow falloff exp(-3x^2) // ae-v4: idle glow tint toward cyan (0.85 -> 0.70 red)
                 c.drawPaint(Paint().apply { shader = gb.makeShader(); blendMode = BlendMode.PLUS })
             }
         }
