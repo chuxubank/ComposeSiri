@@ -73,7 +73,7 @@ fun SiriOrb(time: () -> Float, modifier: Modifier = Modifier) {
 
 private const val ORB_RADIUS = 0.46f
 private const val BLOOM_RADIUS = 0.035f
-private const val BLOOM_STRENGTH = 0.55f
+private const val BLOOM_STRENGTH = 0.45f
 
 /** Shares one scene update between the bloom and sharp passes of a frame. */
 private class OrbFrame(private val scene: OrbScene) {
@@ -113,14 +113,14 @@ private class OrbFrame(private val scene: OrbScene) {
 }
 
 private fun DrawScope.drawCoreGlow(radius: Float, time: Float) {
-    val glow = radius * (0.72f + 0.03f * sin(time * 1.3f))
+    val glow = radius * (0.66f + 0.02f * sin(time * 1.3f))
     drawCircle(
         brush = Brush.radialGradient(
             0f to Color.White,
-            0.10f to Color.White.copy(alpha = 0.92f),
-            0.25f to Color(0xFFF0F8FF).copy(alpha = 0.62f),
-            0.45f to Color(0xFFD0E4FF).copy(alpha = 0.20f),
-            0.7f to Color(0xFFB0D0FF).copy(alpha = 0.05f),
+            0.12f to Color.White.copy(alpha = 0.92f),
+            0.24f to Color(0xFFF0F8FF).copy(alpha = 0.55f),
+            0.42f to Color(0xFFD0E4FF).copy(alpha = 0.15f),
+            0.65f to Color(0xFFB0D0FF).copy(alpha = 0.04f),
             1f to Color.Transparent,
             center = center,
             radius = glow,
