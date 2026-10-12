@@ -918,7 +918,7 @@ internal data class V11Petal(
     val seed: Double,
 )
 internal val V11_A = 0.88          // semi axis along the length (R) // ae-v12
-internal val V11_B = 0.66          // semi axis across (R) // ae-v12 // ae-v13
+internal val V11_B = 0.53          // semi axis across (R) // ae-v12 // ae-v13 // ae-v14
 internal var V11_OFF = 0.0        // disc centre shifted along its length so one end sits near the ball centre // ae-v11 tuned // ae-v12
 internal val V11_CAM = 5.85        // camera distance in R (AE 2700 / 461)
 internal val V11_GROUP_AXIS = arrayOf(doubleArrayOf(2.5111, -0.4554, -2.4769), doubleArrayOf(-1.9069, -1.5195, 0.2601))   // ae-v11: searched for lowest pairwise overlap // ae-v12 // ae-v13
@@ -926,9 +926,9 @@ internal val V11_GROUP_RATE = doubleArrayOf(45.0, -30.0)
 internal val V11_RHO = doubleArrayOf(0.0, 0.105, 0.21, 0.315, 0.42, 0.525, 0.63, 0.735, 0.84, 0.88, 0.92, 0.94, 0.96, 0.97, 0.985, 1.0) // ae-v13
 internal const val V11_NT = 48
 private fun v11Lin(v: Double) = Math.pow(v, 2.2)
-internal val V11_RED = doubleArrayOf(v11Lin(0.878) * 1.8, v11Lin(0.157) * 1.8, v11Lin(0.235) * 1.8) // ae-v11: share balance gain // ae-v12 // ae-v13
+internal val V11_RED = doubleArrayOf(v11Lin(0.878) * 1.7, v11Lin(0.157) * 1.7, v11Lin(0.235) * 1.7) // ae-v11: share balance gain // ae-v12 // ae-v13 // ae-v14
 internal val V11_BLUE = doubleArrayOf(v11Lin(0.29) * 0.9, v11Lin(0.482) * 0.9, v11Lin(1.0) * 0.9) // ae-v11: share balance gain // ae-v12 // ae-v13
-internal val V11_CYAN = doubleArrayOf(v11Lin(0.24) * 1.2, v11Lin(0.86) * 1.2, v11Lin(0.80) * 1.2) // ae-v11: share balance gain // ae-v12 // ae-v13
+internal val V11_CYAN = doubleArrayOf(v11Lin(0.24) * 1.3, v11Lin(0.86) * 1.3, v11Lin(0.80) * 1.3) // ae-v11: share balance gain // ae-v12 // ae-v13 // ae-v14
 internal var V11_PETALS = listOf(
     V11Petal(V11_RED, 0, 0.0, 20.0, 0.9, 0.5749, 0.2407, 0.7045, 1.0), // ae-v12 // ae-v13
     V11Petal(V11_RED, 1, 150.0, 200.0, 0.0, 4.7289, 5.8691, 0.6012, 2.0), // ae-v12 // ae-v13
@@ -948,8 +948,8 @@ internal fun v11PetalMesh(p: V11Petal, t: Double): Array<Array<DoubleArray>> {
         Array(V11_NT) { j ->
             val th = 2.0 * Math.PI * j / V11_NT
             val u = V11_RHO[i] * kotlin.math.cos(th); val v = V11_RHO[i] * kotlin.math.sin(th)
-            var x = V11_A * u; var y = V11_B * v * kotlin.math.sqrt(kotlin.math.max(1.0 - u * u, 0.0)); var z = 0.0 // ae-v13
-            val ph = twRad * u / 2.0                      // Twist about the long axis
+            var x = V11_A * u; var y = V11_B * v * (if (u > 0.0) Math.pow(kotlin.math.max(1.0 - u * u, 0.0), 0.2) else 1.0); var z = 0.0 // ae-v14
+            val ph = if (p.twHi > 100.0) Math.PI / 2.0 - twRad / 2.0 * kotlin.math.sign(u) * (1.0 - (1.0 - kotlin.math.abs(u)) * (1.0 - kotlin.math.abs(u))) else twRad * u / 2.0   // high-twist: twist concentrated at the centre (side-on there, ends face-on) // Twist about the long axis // ae-v14
             val y2 = y * kotlin.math.cos(ph) - z * kotlin.math.sin(ph); val z2 = y * kotlin.math.sin(ph) + z * kotlin.math.cos(ph)
             y = y2; z = z2
             if (p.bendR > 0.0) {                          // Bend: long axis wrapped onto an arc of radius rb
@@ -988,8 +988,8 @@ internal fun v11Tri(buf: FloatArray, size: Int, x: DoubleArray, y: DoubleArray, 
     }
 }
 
-internal var V11_KTHICK = 3.5     // extruded thin disc: edge-on parts read brighter (1 + k (1 - |n.z|)^2) // ae-v12 // ae-v13
-internal var V11_EXPO = 0.5       // AE Exposure // ae-v12 // ae-v13
+internal var V11_KTHICK = 5.0     // extruded thin disc: edge-on parts read brighter (1 + k (1 - |n.z|)^2) // ae-v12 // ae-v13 // ae-v14
+internal var V11_EXPO = 0.43      // AE Exposure // ae-v12 // ae-v13 // ae-v14
 internal const val V11_OPACITY = 0.78
 
 /** Petal layer, linear RGB, Screen between petals. only >= 0: draw just that petal as a flat white footprint mask (overlap checks). */
@@ -1020,7 +1020,9 @@ internal fun v11PetalLayer(t: Double, size: Int, only: Int = -1): FloatArray {
             val f = ((r - (1.0 - fw)) / fw).coerceIn(0.0, 1.0) // ae-v13
             val uu = r * kotlin.math.cos(2.0 * Math.PI * j / V11_NT) // ae-v13
             val sAx = (kotlin.math.abs(r * kotlin.math.sin(2.0 * Math.PI * j / V11_NT)) / kotlin.math.max(kotlin.math.sqrt(kotlin.math.max(1.0 - uu * uu, 0.0)), 1e-6)).coerceIn(0.0, 1.0) // ae-v13
-            val a = if (i == 0) 0.2 else (0.2 + 0.8 * sAx) * (1.0 - f * f)   // opacity by distance to the central axis: 20% on the axis -> 100% at the edge // ae-v13
+            val band = if (sAx < 0.8) 0.2 + 0.8 * v11Smooth(0.0, 0.8, sAx) else 1.0 - v11Smooth(0.8, 1.0, sAx)   // axis 20% -> 100% at 80% width -> 0 at the edge // ae-v14
+            val wideK = if (p.twHi > 100.0) 1.0 else 0.6                                                         // wide petals 60% overall opacity // ae-v14
+            val a = (if (i == 0) 0.2 else band * (1.0 - f * f)) * wideK // ae-v14
             for (ch in 0..2) col[i][j][ch] = if (only >= 0) (if (a > 0.02) 1.0 else 0.0)
                 else (p.rgb[ch] * a * V11_OPACITY * fog * thick * V11_EXPO).coerceIn(0.0, 1.0)
         }
@@ -1035,7 +1037,7 @@ internal fun v11PetalLayer(t: Double, size: Int, only: Int = -1): FloatArray {
     return buf
 }
 
-internal var V11_CORE = 0.7        // additive white light core strength // ae-v12 // ae-v13
+internal var V11_CORE = 1.6        // additive white light core strength // ae-v12 // ae-v13 // ae-v14
 internal var V11_CORE_R = 0.18     // core radius (R) // ae-v12
 internal var V11_GLOW = doubleArrayOf(0.05, 0.04, 0.03, 0.025, 0.02, 0.015)   // weights for AE glow radii 30/57/80/111/150/200 // ae-v13
 internal var V11_GLOW_THR = 0.25
@@ -1055,7 +1057,7 @@ internal fun v11Base(t: Double, size: Int): FloatArray {
         val o = (py * size + px) * 3
         if (x >= 1.0) continue
         val tt = ((dx * 0.7071 + dy * 0.7071) / (x * rp + 1e-6) * 0.5 + 0.5).coerceIn(0.0, 1.0)
-        val band = kotlin.math.exp(-0.5 * ((x - 0.965) / 0.022) * ((x - 0.965) / 0.022))   // ae-v12: rim = 0.03R band blurred by ~0.02R gaussian (soft, no outline)
+        val band = kotlin.math.exp(-0.5 * ((x - 0.975) / 0.0065) * ((x - 0.975) / 0.0065))   // ae-v12: rim = 0.03R band blurred by ~0.02R gaussian (soft, no outline) // ae-v14
         val core = V11_CORE * kotlin.math.exp(-3.0 * (x / V11_CORE_R) * (x / V11_CORE_R))
         for (ch in 0..2) {
             val bg = if (x < 0.985) e[ch] * v11Smooth(0.0, 0.9, x) * (1.0 - v11Smooth(0.9, 1.0, x)) else 0.0
