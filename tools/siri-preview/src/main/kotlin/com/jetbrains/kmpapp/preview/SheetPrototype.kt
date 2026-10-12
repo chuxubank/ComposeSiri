@@ -516,6 +516,7 @@ internal fun renderSheetStills(
     Files.createDirectories(outDir)
     val n = (fps * seconds).toInt().coerceAtLeast(1)
     for (i in 0 until n) {
+        if (System.getenv("SKIP_EXISTING") == "1" && Files.exists(outDir.resolve("$prefix%03d.png".format(i)))) continue   // resume an interrupted render
         val t = i / fps
         val prm = paramsAt(i, t)
         val id = prm.idle.coerceIn(0f, 1f)
