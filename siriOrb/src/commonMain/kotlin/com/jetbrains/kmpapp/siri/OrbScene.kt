@@ -52,40 +52,28 @@ internal class Axis(x: Float, y: Float, z: Float) {
 
 internal val DefaultPetals = listOf(
     PetalSpec(
-        0.98f, 0.07f, 0.11f, width = 0.74f, length = 0.84f, backLength = 0.45f,
-        twist = 0.30f, twistOffset = 0.3f, bend = 0.8f,
-        spinAxis = Axis(0.3f, 1f, 0.2f), spin = 34f, driftAxis = Axis(1f, 0f, 0.4f), drift = 9f,
-        tiltX = 10f, tiltY = 40f, tiltZ = 0f, seed = 0.1f,
-    ),
-    PetalSpec(
-        0.03f, 0.24f, 1.00f, width = 0.76f, length = 0.86f, backLength = 0.5f,
-        twist = 0.25f, twistOffset = 1.9f, bend = 0.7f,
-        spinAxis = Axis(-0.2f, 0.9f, -0.5f), spin = -28f, driftAxis = Axis(0.3f, 0.2f, 1f), drift = 11f,
+        0.03f, 0.24f, 1.00f, width = 0.86f, length = 0.84f, backLength = 0.75f,
+        twist = 0.20f, twistOffset = 1.9f, bend = 0.5f,
+        spinAxis = Axis(-0.2f, 0.9f, -0.5f), spin = -16f, driftAxis = Axis(0.3f, 0.2f, 1f), drift = 8f,
         tiltX = 70f, tiltY = 160f, tiltZ = 50f, seed = 0.7f,
     ),
     PetalSpec(
-        0.05f, 0.78f, 1.00f, width = 0.46f, length = 0.84f, backLength = 0.8f,
-        twist = 0.40f, twistOffset = 0.9f, bend = 0.9f,
-        spinAxis = Axis(0.8f, 0.3f, 0.5f), spin = 38f, driftAxis = Axis(0f, 1f, 0.3f), drift = -8f,
+        0.98f, 0.07f, 0.11f, width = 0.56f, length = 0.84f, backLength = 0.9f,
+        twist = 0.75f, twistOffset = 0.3f, bend = 0.5f,
+        spinAxis = Axis(0.3f, 1f, 0.2f), spin = 24f, driftAxis = Axis(1f, 0f, 0.4f), drift = 7f,
+        tiltX = 10f, tiltY = 40f, tiltZ = 0f, seed = 0.1f,
+    ),
+    PetalSpec(
+        0.05f, 0.78f, 1.00f, width = 0.40f, length = 0.86f, backLength = 1f,
+        twist = 0.85f, twistOffset = 0.9f, bend = 0.45f,
+        spinAxis = Axis(0.8f, 0.3f, 0.5f), spin = 26f, driftAxis = Axis(0f, 1f, 0.3f), drift = -6f,
         tiltX = 130f, tiltY = 260f, tiltZ = 120f, seed = 1.3f,
     ),
     PetalSpec(
-        0.02f, 0.70f, 0.55f, width = 0.64f, length = 0.82f, backLength = 0.4f,
-        twist = 0.30f, twistOffset = 2.6f, bend = 0.8f,
-        spinAxis = Axis(0.4f, -0.6f, 0.7f), spin = -32f, driftAxis = Axis(0.7f, 0.7f, 0f), drift = 10f,
+        0.02f, 0.70f, 0.55f, width = 0.58f, length = 0.82f, backLength = 0.7f,
+        twist = 0.60f, twistOffset = 2.6f, bend = 0.5f,
+        spinAxis = Axis(0.4f, -0.6f, 0.7f), spin = -22f, driftAxis = Axis(0.7f, 0.7f, 0f), drift = 8f,
         tiltX = 200f, tiltY = 80f, tiltZ = 200f, seed = 2.1f,
-    ),
-    PetalSpec(
-        1.00f, 0.06f, 0.24f, width = 0.48f, length = 0.84f, backLength = 0.6f,
-        twist = 0.35f, twistOffset = 0.1f, bend = 0.9f,
-        spinAxis = Axis(-0.6f, 0.5f, 0.6f), spin = 30f, driftAxis = Axis(0.2f, 1f, -0.3f), drift = -12f,
-        tiltX = 280f, tiltY = 320f, tiltZ = 280f, seed = 2.9f,
-    ),
-    PetalSpec(
-        0.10f, 0.30f, 1.00f, width = 0.70f, length = 0.86f, backLength = 0.35f,
-        twist = 0.30f, twistOffset = 1.2f, bend = 0.8f,
-        spinAxis = Axis(0.5f, 0.8f, -0.3f), spin = -36f, driftAxis = Axis(1f, -0.3f, 0.3f), drift = 9f,
-        tiltX = 330f, tiltY = 220f, tiltZ = 15f, seed = 3.6f,
     ),
 )
 
@@ -324,8 +312,8 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val CONTAIN_END = 0.92f
         const val GRAZE_FLOOR = 0.10f
         const val FOG_FAR = 0.18f
-        const val TWIST_WIGGLE = 0.12f
-        const val BEND_WIGGLE = 0.20f
+        const val TWIST_WIGGLE = 0.08f
+        const val BEND_WIGGLE = 0.12f
         const val WIGGLE_HZ = 0.06f
         const val RIM_GAIN = 0.36f
         const val RIM_BASE_R = 0.015f
