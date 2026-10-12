@@ -82,7 +82,7 @@ float gTwI = 0.1745;   // ae-pipeline: idle twist (rad over the half length), se
 float sheetSdfIdle(float3 p, float b, out float2 uv){
     float L = 0.8 * gLB; float W0 = 0.45 * gWB;   // r51b: W0 0.45R
     float u = clamp(p.x / L, -1.0, 1.0);   // r45: centred lens
-    float3 q = float3(p.x, p.y - gBlade * 0.12 * (u*u - 0.3), p.z - b * (u*u - 0.3));   // ae-v7: blades curved in-plane
+    float3 q = float3(p.x, p.y - gBlade * 0.04 * (u*u - 0.3), p.z - b * (u*u - 0.3));   // ae-v7: blades curved in-plane // ae-v9: blade in-plane curvature 0.12 -> 0.04 (straighter, no hook)
     float a = gTwI * u;   // ae-pipeline: twist from the loop (was fixed 0.1745)
     float c = cos(a), s = sin(a);
     float2 yz = float2(c*q.y + s*q.z, -s*q.y + c*q.z);
@@ -142,7 +142,7 @@ half4 main(float2 fc){
     float3 ro = float3(0, 0, 5.85);                  // camera 2700/461
     float3 rd = normalize(float3(p * (1.0/5.85) * 5.85 / 5.85, -1.0));
     rd = normalize(float3(p / 5.85, -1.0));
-    half3 acc = half3(0); half accA = 0.0;
+    half3 acc = half3(0); half accA = 0.0; half3 bladeAdd = half3(0);   // ae-v9: idle blades accumulated additively, added over the petals
     half3 bladeAcc = half3(0);   // r61: screen-space blade core lines
     float r = length(pS);
     float rad0 = mix(0.78, 0.80, uProc) + 0.5 * uListen;
@@ -211,15 +211,16 @@ half4 main(float2 fc){
             float tI = uSpinT / 0.6;   // spinT runs at the idle speed 0.6 -> real seconds
             float3 rateQ = sign(rate) * mix(float3(30.0), float3(60.0), step(float3(40.0), abs(rate)));   // ae-v2: AE 30 -> 30 deg/s, 45 -> 60 deg/s, signs kept; 30 deg/s = 1 turn / 12 s, 60 = 2 turns -> 12 s loop
             float3 offI = off;
-            // ae-v8: large petals k0/k1/k2 tumble about x at 30 deg/s, almost no tilt, searched x phases so summed face-on |n.z| of the 3 large petals stays in 1.72..1.99 (<= 2.0; check: designer/ae_v8/faceon_check.py). Blades k3/k4/k5: same x rate/phase+90 deg as their large petal, no tilt, one shared z spin 30 deg/s with z 120 deg apart -> rotating three-pointed star.
-            if (k == 1) { rateQ = float3(30.0, 0.0, 60.0);   offI = float3(5.852, 0.0, 1.1); }     // blue large
-            if (k == 5) { rateQ = float3(30.0, 0.0, 30.0);   offI = float3(7.423, 0.0, 0.0); }     // blue blade
-            if (k == 2) { rateQ = float3(-30.0, 0.0, 30.0);  offI = float3(1.474, 0.180, 2.2); }   // red large
-            if (k == 3) { rateQ = float3(-30.0, 0.0, 30.0);  offI = float3(3.045, 0.0, 2.0944); }  // red blade
-            if (k == 0) { rateQ = float3(-30.0, 0.0, -30.0); offI = float3(5.663, 0.0, 0.3); }     // cyan large
-            if (k == 4) { rateQ = float3(-30.0, 0.0, 30.0);  offI = float3(7.234, 0.0, 4.1888); }  // teal-cyan blade
+            // ae-v9: large petals k0/k1/k2 use a tilted plane with in-plane spin: RI = rotZ(z) * rotX(tilt) * rotZ(spin); x = spin rate/phase, y = fixed tilt (rate 0), z = tilt-axis azimuth. |n.z| = cos(tilt) is constant (0.43/0.47/0.44, sum 1.35 <= 2.0) so each colour's area stays steady; phases searched so pairwise overlap <= 30% (check: designer/ae_v9/tools). Blades k3/k4/k5: x tumble 30 deg/s, shared z spin 30 deg/s, 120 deg apart.
+            if (k == 1) { rateQ = float3(30.0, 0.0, 30.0);   offI = float3(5.890, 1.042, 3.305); }   // blue large // ae-v9b: tilts -0.08 rad (|n.z| ~0.50/0.54/0.51, sum 1.55)
+            if (k == 5) { rateQ = float3(30.0, 0.0, 30.0);   offI = float3(1.648, 0.0, 0.0); }      // blue blade
+            if (k == 2) { rateQ = float3(-60.0, 0.0, 30.0);  offI = float3(1.178, 1.004, 1.958); }   // red large
+            if (k == 3) { rateQ = float3(-30.0, 0.0, 30.0);  offI = float3(0.578, 0.0, 2.0944); }    // red blade
+            if (k == 0) { rateQ = float3(-60.0, 0.0, 0.0);   offI = float3(4.189, 1.032, 2.401); }   // cyan large
+            if (k == 4) { rateQ = float3(30.0, 0.0, 30.0);   offI = float3(1.368, 0.0, 4.1888); }    // teal-cyan blade
             float3 angI = offI + rateQ * (PI/180.0) * tI;
             float3x3 RI = rotZ(angI.z) * rotY(angI.y) * rotX(angI.x);
+            if (k == 0 || k == 1 || k == 2) RI = rotZ(angI.z) * rotX(angI.y) * rotZ(angI.x);   // ae-v9: large petals = tilted plane + in-plane spin (constant face-on)
             float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
             float3 c0 = normalize(Rm[0]); float3 c1 = normalize(Rm[1] - dot(Rm[1], c0) * c0); float3 c2 = cross(c0, c1);
             R = float3x3(c0, c1, c2);
@@ -235,8 +236,8 @@ half4 main(float2 fc){
         ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 0.5625 : k == 0 ? 0.875 : (k == 1 ? 0.975 : (k == 2 ? 0.94 : (k == 3 ? 0.9375 : (k == 4 ? 0.8125 : 0.75))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R // r67: big blue 0.78R // r69: blades k3/k5/k6 half-length 0.75R // r73: cyan fill k0 half-length 0.7R; blades k3/k5/k6 0.75/0.6/0.45R
         { float tB = uSpinT / 0.6; float bl = sin((mod(fk, 2.0) < 0.5 ? 1.0472 : 2.0944) * tB + fk * 2.3); gLB = (k == 3 || k == 5 || k == 6) ? 1.0 + 0.2 * uIdle * sin((k == 5 ? 2.0944 : 1.0472) * tB + fk * 1.3) : 1.0 - uIdle * 0.075 * (1.0 + bl); gWB = 1.0 + 0.15 * uIdle * sin((mod(fk, 3.0) < 1.0 ? 2.0944 : 1.0472) * tB + fk * 1.1 + 0.7); if (k == 2) { float s2 = sin(1.0472 * tB + 3.4 + uFPh.x); gLB = 1.0 - uIdle * 0.075 * (1.0 - s2); gWB = gLB; } bend += 0.08 * uIdle * sin((mod(fk, 2.0) < 0.5 ? 2.0944 : 1.0472) * tB + fk * 0.9 + 1.9); }   // r74: sheet length breathes inward only (0..-15%); blades +-20%; k2 size peaks when its roll is most edge-on (half a period from its face-on peak); bow +-0.08
         if (uIdle > 0.5) {   // ae-v2: half length 0.70-0.80 R, half width 0.45-0.55 R, no breathing
-            float hl = (k == 0 || k == 1 || k == 2) ? 0.92 : 0.40;
-            float hw2 = (k == 0 || k == 1 || k == 2) ? 0.633 : 0.253;   // ae-v6: large petals x1.15, blades 0.4x large width // ae-v7: large petals x0.85 // ae-v8: large petals back to 1.0x; blades half length 0.40 (0.8 R long)
+            float hl = (k == 0 || k == 1 || k == 2) ? 0.828 : 0.40; // ae-v9: large petals 0.9x
+            float hw2 = (k == 0 || k == 1 || k == 2) ? 0.570 : 0.18;   // ae-v6: large petals x1.15, blades 0.4x large width // ae-v7: large petals x0.85 // ae-v8: large petals back to 1.0x; blades half length 0.40 (0.8 R long) // ae-v9: blades thinner 0.253 -> 0.18 // ae-v9: large petal width 0.9x
             gLB = hl / 0.8; gWB = hw2 / 0.45; ws = 1.0;
             gBlade = (k == 3 || k == 4 || k == 5) ? 1.0 : 0.0;
         }
@@ -252,7 +253,7 @@ half4 main(float2 fc){
         if (k == 0) offW.z += uIdle * uK0Z;   // r74: cyan k0 pulled toward the camera so red sheets do not cover it
         if (uIdle > 0.5) {   // ae-v8: centred composition. Large petals: centres 0.12 R off the orb centre at 90/210/330 deg (balanced). Blades: shifted along their own long axis by their half length so the blunt end sits at the orb centre and the tip points outward (three-pointed star).
             if (k == 3 || k == 4 || k == 5) { offW = 0.40 * (R * float3(1.0, 0.0, 0.0)); offW.z = 0.0; }
-            else { float oA = 1.5708 + (k == 1 ? 0.0 : (k == 2 ? 2.0944 : 4.1888)); offW = 0.12 * float3(cos(oA), sin(oA), 0.0); }
+            else { float oA = 1.5708 + (k == 1 ? 0.0 : (k == 2 ? 2.0944 : 4.1888)); offW = 0.44 * float3(cos(oA), sin(oA), 0.0); } // ae-v9: large petal centres 0.44 R out at 90/210/330 deg so the three petals are staggered (overlap <= 30%)
         }
         float3 nW = R * float3(0, 0, 1);
         float sideS = 1.0 - abs(nW.z);                    // overall sheet normal vs view
@@ -423,7 +424,7 @@ half4 main(float2 fc){
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (uBlend > 0.5) {
                     half3 e = min(c4.rgb * c4.a * half(mix(1.0, 0.78, uIdle)), half3(1.0));   // ae-pipeline: AE texture opacity 78%
-                    acc = acc + e - acc * e;          // Screen
+                    if (uIdle > 0.5 && gBlade > 0.5) bladeAdd += e; else acc = acc + e - acc * e;          // Screen   // ae-v9: blades additive, above petals
                 } else {
                     for (int j = 0; j < 8; j++) { if (j == k) { dd6[j] = tt; cc6[j] = c4; } }
                 }
@@ -453,6 +454,7 @@ half4 main(float2 fc){
         }
     }
     if (uBlade > 0.5 && uIdle > 0.5) return half4(bladeAcc, 1);   // r66: line layer output re-enabled   // r61: blade pass output
+    acc += bladeAdd;   // ae-v9: blades drawn above the large petals (additive)
     acc *= half(radial);
     if (uLayer > 0.5 && uBlend < 0.5) return half4(acc, accA * half(radial));   // premultiplied, for layer OVER
     return half4(acc, 1);
@@ -612,7 +614,7 @@ internal fun renderSheetStills(
         c.clear(Color.BLACK)
         if (id > 0.5f) {   // ae-v2: base #2D2C32 at 0.35 opacity drawn first (linear light), sheets Screen on top
             val lin = { v: Int -> Math.pow(v / 255.0, 2.2).toFloat() }
-            val bgFx = RuntimeEffect.makeForShader("uniform float2 uC; uniform float uR; half4 main(float2 p) { float x = length(p - uC) / uR; half3 e = half3(0.0046, 0.0040, 0.0070); half3 c = mix(half3(0.0), e, half(smoothstep(0.0, 0.9, x))) * half(1.0 - smoothstep(0.9, 1.0, x)); return half4(c, 1.0); }")   // ae-v8: base radial gradient #000 centre -> #0E0D14 (linear 0.0046,0.0040,0.0070) near the edge -> #000 at the edge
+            val bgFx = RuntimeEffect.makeForShader("uniform float2 uC; uniform float uR; half4 main(float2 p) { float x = length(p - uC) / uR; half3 e = half3(0.00168, 0.00141, 0.00370); half3 c = mix(half3(0.0), e, half(smoothstep(0.0, 0.9, x))) * half(1.0 - smoothstep(0.9, 1.0, x)); return half4(c, 1.0); }")   // ae-v8: base radial gradient #000 centre -> #0E0D14 (linear pow(v/255,2.2) = 0.00168,0.00141,0.00370; ae-v9 colour-space fix) near the edge -> #000 at the edge
             val bgb = RuntimeShaderBuilder(bgFx); bgb.uniform("uC", cx, cx); bgb.uniform("uR", radius * 0.985f)
             c.drawCircle(cx, cx, radius * 0.985f, Paint().apply { shader = bgb.makeShader() })
         }
@@ -661,7 +663,7 @@ internal fun renderSheetStills(
         }
         // Wide soft glow ~0.5 R, strength ~0.35, fast falloff.
         run {
-            val g = mixF(0.15f, 1.6f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))   // ae-v2: idle centre soft glow 1.0 -> 0.5   // r56: centre soft glow stronger (radius stays 0.16R) for ~4% white star // r57: idle strength 1.0 // r57b: idle strength 2.0 (cap) - 1.0 gave ~1.5% white // r58: back to 1.0 // ae-v4: idle centre soft glow 0.5 -> 0.8 // ae-v8: idle centre glow 0.8 -> 1.6 for 4-6% white (radius unchanged 0.24 R)
+            val g = mixF(0.15f, 2.2f, id) * prm.core * (1f - kotlin.math.max(prm.move, prm.proc))   // ae-v2: idle centre soft glow 1.0 -> 0.5   // r56: centre soft glow stronger (radius stays 0.16R) for ~4% white star // r57: idle strength 1.0 // r57b: idle strength 2.0 (cap) - 1.0 gave ~1.5% white // r58: back to 1.0 // ae-v4: idle centre soft glow 0.5 -> 0.8 // ae-v8: idle centre glow 0.8 -> 1.6 for 4-6% white (radius unchanged 0.24 R) // ae-v9: idle centre glow 1.6 -> 2.2 (white measured 2.6-4.3%, target 4-6%)
             if (g > 0.001f) {
                 // radial gradient instead of a mask-blurred circle (the blur produced a faint square box at small sizes)
                 val gs = (if (prm.coreScale >= 0f) prm.coreScale else 1f) * radius * mixF(0.5f, 0.24f, id)   // r64 idle: soft glow 0.25R // ae-v7: idle centre glow radius 12% of ball diameter (0.24 R), gaussian, additive
