@@ -33,4 +33,6 @@ plugins {
 }
 
 include(":shared")
+include(":siriOrb")
+include(":siriOrbPreview")
 include(":androidApp")
