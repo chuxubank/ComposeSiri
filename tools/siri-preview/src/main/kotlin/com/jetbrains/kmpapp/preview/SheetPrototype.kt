@@ -919,6 +919,10 @@ internal data class V11Petal(
 )
 internal val V11_A = 0.88          // semi axis along the length (R) // ae-v12
 internal val V11_B = 0.566          // semi axis across (R) // ae-v12
+internal var V11_BLADE_B = 0.2   // narrow (high-twist) petal half width (R) // ae-v20
+internal var V11_BLADE_TIP = 0.5 // width ~ (1 - u^2)^(0.5 + tip): pointed lens ends // ae-v20
+internal var V11_BLADE_MAX_TILT = 35.0 // deg // ae-v20
+internal var V11_BLADE_A = (System.getenv("BA") ?: "0.88").toDouble() // ae-v20
 internal var V11_OFF = 0.0        // disc centre shifted along its length so one end sits near the ball centre // ae-v11 tuned // ae-v12
 internal val V11_CAM = 5.85        // camera distance in R (AE 2700 / 461)
 internal val V11_GROUP_AXIS = arrayOf(doubleArrayOf(1.8952, -0.3300, -1.1176), doubleArrayOf(0.1698, 1.9073, -0.3075))   // ae-v11: searched for lowest pairwise overlap // ae-v12
@@ -938,17 +942,28 @@ internal var V11_PETALS = listOf(
     V11Petal(V11_CYAN, 1, 170.0, 190.0, 0.0, 2.9797, 4.8017, 4.8643, 6.0), // ae-v12
 )
 
+/** Rotate r so its local long axis (x) leans at most maxDeg out of the screen plane; keeps blades from pointing at the camera. */ // ae-v20
+internal fun v11ClampAxisTilt(r: Array<DoubleArray>, maxDeg: Double): Array<DoubleArray> {
+    val dx = r[0][0]; val dy = r[1][0]; val dz = r[2][0]
+    val ang = kotlin.math.asin(kotlin.math.abs(dz).coerceAtMost(1.0)); val lim = Math.toRadians(maxDeg)
+    val len = kotlin.math.sqrt(dx * dx + dy * dy)
+    if (ang <= lim || len < 1e-9) return r
+    val s = if (dz >= 0.0) 1.0 else -1.0
+    return v11Mul(v11RotAxis(doubleArrayOf(-dy / len * s, dx / len * s, 0.0), ang - lim), r)
+}
 /** World-space mesh of petal p at time t: [V11_RHO.size][V11_NT] points, each DoubleArray(3) in units of R (camera on +z). */
 internal fun v11PetalMesh(p: V11Petal, t: Double): Array<Array<DoubleArray>> {
     val w = 0.5 + 0.5 * v11Wig(t, p.seed)
     val twRad = Math.toRadians(p.twLo + (p.twHi - p.twLo) * w)
     val rb = p.bendR * (1.0 + 0.15 * v11Wig(t, p.seed + 10.0))
-    val rot = v11Mul(v11RotAxis(V11_GROUP_AXIS[p.group], Math.toRadians(V11_GROUP_RATE[p.group]) * t), v11Euler(p.ex, p.ey, p.ez))
+    val rot0 = v11Mul(v11RotAxis(V11_GROUP_AXIS[p.group], Math.toRadians(V11_GROUP_RATE[p.group]) * t), v11Euler(p.ex, p.ey, p.ez))
+    val rot = if (p.twHi > 100.0) v11ClampAxisTilt(rot0, V11_BLADE_MAX_TILT) else rot0 // ae-v20
     return Array(V11_RHO.size) { i ->
         Array(V11_NT) { j ->
             val th = 2.0 * Math.PI * j / V11_NT
             val u = V11_RHO[i] * kotlin.math.cos(th); val v = V11_RHO[i] * kotlin.math.sin(th)
-            var x = V11_A * u; var y = V11_B * v; var z = 0.0
+            val blade = p.twHi > 100.0 // ae-v20
+            var x = (if (blade) V11_BLADE_A else V11_A) * u; var y = if (blade) V11_BLADE_B * v * Math.pow(kotlin.math.max(1.0 - u * u, 0.0), V11_BLADE_TIP) else V11_B * v; var z = 0.0 // ae-v20
             val ph = twRad * u / 2.0                      // Twist about the long axis
             val y2 = y * kotlin.math.cos(ph) - z * kotlin.math.sin(ph); val z2 = y * kotlin.math.sin(ph) + z * kotlin.math.cos(ph)
             y = y2; z = z2
