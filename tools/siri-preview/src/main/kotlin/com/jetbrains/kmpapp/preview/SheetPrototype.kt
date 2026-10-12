@@ -210,13 +210,13 @@ half4 main(float2 fc){
             float tI = uSpinT / 0.6;   // spinT runs at the idle speed 0.6 -> real seconds
             float3 rateQ = sign(rate) * mix(float3(30.0), float3(60.0), step(float3(40.0), abs(rate)));   // ae-v2: AE 30 -> 30 deg/s, 45 -> 60 deg/s, signs kept; 30 deg/s = 1 turn / 12 s, 60 = 2 turns -> 12 s loop
             float3 offI = off;
-            // ae-v3: three red sheets (k2,k3,k4), rates/phases searched so at every frame of the 12 s loop one red is within 41 deg of face-on (|n.z| >= 0.757; check: designer/red_faceon_check.py)
-            if (k == 2) { rateQ = float3(-30.0, -30.0, 30.0);  offI = float3(2.408, 2.427, 2.2); }
-            if (k == 3) { rateQ = float3(-60.0, -60.0, 60.0);  offI = float3(0.125, 0.104, 4.0); }
-            if (k == 4) { rateQ = float3(-30.0, 30.0, -60.0);  offI = float3(3.995, 2.301, 0.5); }
-            if (k == 1) { rateQ = float3(30.0, 0.0, 60.0);  offI = float3(0.0, 0.0, 1.1); }   // ae-v5: blue k1 tumbles about x at 30 deg/s, y held face-on
-            if (k == 5) { rateQ = float3(30.0, 0.0, -30.0);  offI = float3(1.5708, 0.0, 2.9); }   // ae-v5: blue k5 same x rate, 90 deg phase from k1 -> one blue within 45 deg of face-on every frame (check: designer/ae_v5/faceon_check.py)
-            if (k == 0) { rateQ = float3(0.0, 0.0, 30.0);  offI = float3(0.35, 0.2, 0.3); }   // ae-v5: cyan k0 held ~23 deg off face-on (|n.z| ~0.92), spins in-plane 30 deg/s -> face visible every frame
+            // ae-v6: 3 colour pairs, each = large face-on petal + narrow blade with the same x tumble rate and x phase +90 deg, so one is face-on while the other is edge-on (y held, z spins differ). 12 s loop.
+            if (k == 1) { rateQ = float3(30.0, 0.0, 60.0);   offI = float3(0.0, 0.0, 1.1); }      // blue large
+            if (k == 5) { rateQ = float3(30.0, 0.0, -30.0);  offI = float3(1.5708, 0.0, 2.9); }   // blue blade
+            if (k == 2) { rateQ = float3(-30.0, 0.0, 30.0);  offI = float3(1.0472, 0.0, 2.2); }   // red large
+            if (k == 3) { rateQ = float3(-30.0, 0.0, -60.0); offI = float3(2.618, 0.0, 4.0); }    // red blade
+            if (k == 0) { rateQ = float3(60.0, 0.0, 30.0);   offI = float3(2.0944, 0.0, 0.3); }   // cyan large
+            if (k == 4) { rateQ = float3(60.0, 0.0, -30.0);  offI = float3(3.6652, 0.0, 0.5); }   // teal-cyan blade
             float3 angI = offI + rateQ * (PI/180.0) * tI;
             float3x3 RI = rotZ(angI.z) * rotY(angI.y) * rotX(angI.x);
             float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
@@ -234,8 +234,8 @@ half4 main(float2 fc){
         ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 0.5625 : k == 0 ? 0.875 : (k == 1 ? 0.975 : (k == 2 ? 0.94 : (k == 3 ? 0.9375 : (k == 4 ? 0.8125 : 0.75))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R // r67: big blue 0.78R // r69: blades k3/k5/k6 half-length 0.75R // r73: cyan fill k0 half-length 0.7R; blades k3/k5/k6 0.75/0.6/0.45R
         { float tB = uSpinT / 0.6; float bl = sin((mod(fk, 2.0) < 0.5 ? 1.0472 : 2.0944) * tB + fk * 2.3); gLB = (k == 3 || k == 5 || k == 6) ? 1.0 + 0.2 * uIdle * sin((k == 5 ? 2.0944 : 1.0472) * tB + fk * 1.3) : 1.0 - uIdle * 0.075 * (1.0 + bl); gWB = 1.0 + 0.15 * uIdle * sin((mod(fk, 3.0) < 1.0 ? 2.0944 : 1.0472) * tB + fk * 1.1 + 0.7); if (k == 2) { float s2 = sin(1.0472 * tB + 3.4 + uFPh.x); gLB = 1.0 - uIdle * 0.075 * (1.0 - s2); gWB = gLB; } bend += 0.08 * uIdle * sin((mod(fk, 2.0) < 0.5 ? 2.0944 : 1.0472) * tB + fk * 0.9 + 1.9); }   // r74: sheet length breathes inward only (0..-15%); blades +-20%; k2 size peaks when its roll is most edge-on (half a period from its face-on peak); bow +-0.08
         if (uIdle > 0.5) {   // ae-v2: half length 0.70-0.80 R, half width 0.45-0.55 R, no breathing
-            float hl = k == 0 ? 0.80 : (k == 1 ? 0.80 : (k == 2 ? 0.70 : (k == 3 ? 0.78 : (k == 4 ? 0.72 : 0.76))));
-            float hw2 = k == 0 ? 0.55 : (k == 1 ? 0.55 : (k == 2 ? 0.45 : (k == 3 ? 0.48 : (k == 4 ? 0.52 : 0.47))));   // ae-v5: cyan k0 size = blue k1 (0.80 x 0.55 R)
+            float hl = (k == 0 || k == 1 || k == 2) ? 0.92 : 0.90;
+            float hw2 = (k == 0 || k == 1 || k == 2) ? 0.633 : 0.253;   // ae-v6: large petals x1.15, blades 0.4x large width
             gLB = hl / 0.8; gWB = hw2 / 0.45; ws = 1.0;
         }
         { float tW = uSpinT / 0.6;   // ae-pipeline: loopable wiggle(0.2,15) on twist [deg], wiggle(0.2,10) on bend [read as 0.10 R]
@@ -304,8 +304,8 @@ half4 main(float2 fc){
         if (uIdle > 0.5 && k == 5) baseC = half3(0.235, 0.784, 0.94);   // r46: sixth sheet cyan #3CC8F0
         if (uIdle > 0.5 && k == 6) baseC = half3(0.184, 0.42, 1.0);   // r51e: 7th sheet blue #2F6BFF
         if (uIdle > 0.5 && k == 7) baseC = half3(0.184, 0.42, 1.0);   // r60: 8th sheet half-side blue fill
-        if (uIdle > 0.5) { if (k == 2 || k == 3 || k == 4) baseC = half3(1.0, 0.353, 0.431);   /* ae-v3: k3 blue -> red (3 reds) */ else if (k == 5) baseC = half3(0.227, 0.357, 1.0); /* ae-v4: k5 cyan -> deep blue #3A5BFF */ else if (k == 0) baseC = half3(0.373, 0.89, 0.91); else baseC = half3(0.29, 0.482, 1.0); }   // r64: red #FF5A6E, cyan #5FE3E8, blue #4A7BFF
-        if (uIdle > 0.5) { half lumC = dot(baseC, half3(0.299, 0.587, 0.114)); baseC = mix(half3(lumC), baseC, 0.85) * 0.9; }   // r71: face saturation -15%, value -10%
+        if (uIdle > 0.5) { if (k == 2 || k == 3) baseC = half3(0.878, 0.157, 0.235); /* ae-v6: red #E0283C */   /* ae-v3: k3 blue -> red (3 reds) */ else if (k == 4) baseC = half3(0.18, 0.80, 0.72); /* ae-v6: k4 red -> teal-cyan blade */ else if (k == 5) baseC = half3(0.227, 0.357, 1.0); /* ae-v4: k5 cyan -> deep blue #3A5BFF */ else if (k == 0) baseC = half3(0.373, 0.89, 0.91); else baseC = half3(0.29, 0.482, 1.0); }   // r64: red #FF5A6E, cyan #5FE3E8, blue #4A7BFF
+        if (uIdle > 0.5 && !(k == 2 || k == 3)) { half lumC = dot(baseC, half3(0.299, 0.587, 0.114)); baseC = mix(half3(lumC), baseC, 0.85) * 0.9; }   // r71: face saturation -15%, value -10% // ae-v6: reds keep full saturation
         half4 col = half4(pow(baseC, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
         // analytic AA: near-miss within ~1 px still contributes with fractional coverage
@@ -411,7 +411,12 @@ half4 main(float2 fc){
                     col.rgb = half3(pow(baseC, half3(2.2)));
                     bri = mix(0.5, 1.0, wf) * fog;   // depth fog / far layer kept (AE Fog 100%)
                     bri *= 1.0 + 0.3 * smoothstep(0.75, 0.95, rn);   // ae-v4: brightest outer ring of the radial texture x1.3
-                    a = smoothstep(0.0, 1.0, rn) * aEdge * aaK * uBodyA * (1.0 - smoothstep(0.80, 0.85, rS));   // texture: 0 at sheet centre -> 1 at edge (checked); ae-v2: outer edge clipped by 0.85 R
+                    a = smoothstep(0.0, 1.0, rn) * aEdge * aaK * uBodyA * (1.0 - smoothstep(0.92, 0.97, rS));   // texture: 0 at sheet centre -> 1 at edge (checked); ae-v2: outer edge clipped by 0.85 R // ae-v6: petals reach ~0.97 R
+                    float eW = 0.06;   // ae-v6: petal rim highlight width ~3% of ball diameter (0.06 R)
+                    float rimHL = smoothstep(0.0, 0.008, dEdgeR) * (1.0 - smoothstep(0.7 * eW, eW, dEdgeR)) * mix(0.08, 1.0, smoothstep(0.25, 0.85, sideS)) * aaK * uBodyA * (1.0 - smoothstep(0.92, 0.97, rS));   // ae-v6: near-white edge, grows as the petal turns edge-on, ~0 face-on
+                    col.rgb = mix(col.rgb, half3(0.95, 0.97, 1.0), half(rimHL));
+                    a = max(a, rimHL);
+                    bri = mix(bri, 2.2, rimHL);   // ae-v6: highlight is HDR so overlaps clip to white
                 }
                 half4 c4 = half4(col.rgb * half(bri), half(a));
                 if (uBlend > 0.5) {
@@ -604,8 +609,8 @@ internal fun renderSheetStills(
         val c = scene.canvas
         c.clear(Color.BLACK)
         if (id > 0.5f) {   // ae-v2: base #2D2C32 at 0.35 opacity drawn first (linear light), sheets Screen on top
-            val lin = { v: Int -> Math.pow(v / 255.0, 2.2).toFloat() * 0.35f }
-            c.drawCircle(cx, cx, radius * 0.985f, Paint().apply { color4f = org.jetbrains.skia.Color4f(lin(0x2D), lin(0x2C), lin(0x32), 1f) })
+            val lin = { v: Int -> Math.pow(v / 255.0, 2.2).toFloat() }
+            c.drawCircle(cx, cx, radius * 0.985f, Paint().apply { color4f = org.jetbrains.skia.Color4f(lin(0x0E), lin(0x0D), lin(0x14), 1f) }) // ae-v6: base #0E0D14
         }
         c.drawImage(bodyImg, 0f, 0f, Paint().apply {
             imageFilter = ImageFilter.makeBlur(mixF(0.6f, 0.001f, id), mixF(0.6f, 0.001f, id), FilterTileMode.DECAL)   // r37 idle: front sheets blur 0
@@ -713,7 +718,7 @@ internal fun renderSheetStills(
             blendMode = BlendMode.PLUS
             if (id < 0.99f) maskFilter = org.jetbrains.skia.MaskFilter.makeBlur(org.jetbrains.skia.FilterBlurMode.NORMAL, radius * 0.01f * (1f - id) + 0.001f)
         })
-        val rimA = (sh * (1f - prm.move)).coerceIn(0f, 1f)
+        val rimA = (sh * (1f - prm.move) * (1f - id)).coerceIn(0f, 1f)   // ae-v6: no rim halo in idle
         if (rimA > 0.01f) {
             fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (mixF(55f, 32f, id) * rimA).toInt().coerceIn(0, 255) })   // r55 idle: outer halo peak ~0.15 // r64: rim 0.25
             fc.drawImage(bodyImg, 0f, 0f, Paint().apply {
@@ -736,7 +741,7 @@ internal fun renderSheetStills(
             fc.drawPaint(Paint().apply { shader = fgb.makeShader(); blendMode = BlendMode.PLUS }) // r64 fix: opaque layer alpha covered the scene; draw PLUS directly
         }
         // r55 idle glass: soft fresnel, upper-left red / lower-right blue, peak 0.15
-        if (id > 0.01f && sh > 0.01f) {
+        if (id > 0.01f && id < 0.5f && sh > 0.01f) {   // ae-v6: no fresnel rim in idle
             val fb = RuntimeShaderBuilder(fresnelFx)
             fb.child("uImg", bodyImg.makeShader())
             fb.uniform("uC", cx, cx); fb.uniform("uR", radius); fb.uniform("uA", 0.3f * id * sh); fb.uniform("uPx", 1.5f / radius)
