@@ -11,12 +11,13 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.tanh
 
 /**
  * One translucent surface of the orb: an ellipse centred on the orb, with a texture that is clear
- * inside and dense towards the rim. The ellipse is twisted around its long axis and bent along it,
- * so its two halves face different ways: it reads as a figure eight, or as a broad lobe whose other
- * half is a blade.
+ * inside and dense towards the rim. The ellipse is twisted around its long axis, mostly near the
+ * centre, and bent along it, so its two halves face different ways: it reads as a figure eight, or as
+ * a broad lobe whose other half is a straight blade.
  * The whole surface spins around one axis and slowly drifts around a second one.
  */
 internal class PetalSpec(
@@ -280,7 +281,9 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
     }
 
     private fun deform(x0: Float, y0: Float, length: Float, twist: Float, twistOffset: Float, bend: Float, o: Int) {
-        val theta = twistOffset + twist * (y0 / length)
+        // The twist is concentrated around the centre so each half stays almost flat and turns edge-on
+        // as a whole, into a straight blade.
+        val theta = twistOffset + twist * tanh(TWIST_SHARPNESS * y0 / length) / tanh(TWIST_SHARPNESS)
         val x1 = x0 * cos(theta)
         val z1 = x0 * sin(theta)
         if (abs(bend) < 1e-4f) {
@@ -317,6 +320,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val GRAZE_FLOOR = 0.10f
         const val FOG_FAR = 0.18f
         // After Effects' wiggle(0.2, 15) on the twist and bend angles.
+        const val TWIST_SHARPNESS = 3f
         const val TWIST_WIGGLE = 0.26f
         const val BEND_WIGGLE = 0.15f
         const val WIGGLE_HZ = 0.2f
