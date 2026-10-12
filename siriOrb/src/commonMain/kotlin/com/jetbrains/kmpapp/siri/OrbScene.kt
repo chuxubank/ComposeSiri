@@ -13,19 +13,21 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * One translucent surface of the orb: two teardrop lobes meeting tip to tip at the orb centre,
- * with a texture that is clear inside and dense towards the rim. The surface is twisted around and
- * bent along its long axis, spins around one axis and slowly drifts around a second one.
+ * One translucent surface of the orb: an ellipse centred on the orb, with a texture that is clear
+ * inside and dense towards the rim. The ellipse is twisted around its long axis by close to half a
+ * turn and bent along it, so some part of it is always seen edge-on: a pinched neck that slides along
+ * the surface as it turns, splitting it into a figure eight or a lobe with a curved, pointed tail.
+ * The whole surface spins around one axis and slowly drifts around a second one.
  */
 internal class PetalSpec(
     val red: Float,
     val green: Float,
     val blue: Float,
+    /** Half of the short axis of the ellipse, in orb radii. */
     val width: Float,
+    /** Half of the long axis of the ellipse, in orb radii. */
     val length: Float,
-    /** Length of the lobe on the other side of the centre, as a fraction of [length]. */
-    val backLength: Float,
-    /** Twist in radians from the centre to the end of the main lobe. */
+    /** Twist in radians from the centre to either end of the long axis. */
     val twist: Float,
     val twistOffset: Float,
     /** Curvature of the bend along the long axis, in 1 / orb radius. */
@@ -52,40 +54,10 @@ internal class Axis(x: Float, y: Float, z: Float) {
 
 internal val DefaultPetals = listOf(
     PetalSpec(
-        0.98f, 0.07f, 0.11f, width = 0.74f, length = 0.84f, backLength = 0.45f,
-        twist = 0.30f, twistOffset = 0.3f, bend = 0.8f,
-        spinAxis = Axis(0.3f, 1f, 0.2f), spin = 34f, driftAxis = Axis(1f, 0f, 0.4f), drift = 9f,
-        tiltX = 10f, tiltY = 40f, tiltZ = 0f, seed = 0.1f,
-    ),
-    PetalSpec(
-        0.03f, 0.24f, 1.00f, width = 0.76f, length = 0.86f, backLength = 0.5f,
-        twist = 0.25f, twistOffset = 1.9f, bend = 0.7f,
-        spinAxis = Axis(-0.2f, 0.9f, -0.5f), spin = -28f, driftAxis = Axis(0.3f, 0.2f, 1f), drift = 11f,
-        tiltX = 70f, tiltY = 160f, tiltZ = 50f, seed = 0.7f,
-    ),
-    PetalSpec(
-        0.05f, 0.78f, 1.00f, width = 0.46f, length = 0.84f, backLength = 0.8f,
-        twist = 0.40f, twistOffset = 0.9f, bend = 0.9f,
-        spinAxis = Axis(0.8f, 0.3f, 0.5f), spin = 38f, driftAxis = Axis(0f, 1f, 0.3f), drift = -8f,
-        tiltX = 130f, tiltY = 260f, tiltZ = 120f, seed = 1.3f,
-    ),
-    PetalSpec(
-        0.02f, 0.70f, 0.55f, width = 0.64f, length = 0.82f, backLength = 0.4f,
-        twist = 0.30f, twistOffset = 2.6f, bend = 0.8f,
-        spinAxis = Axis(0.4f, -0.6f, 0.7f), spin = -32f, driftAxis = Axis(0.7f, 0.7f, 0f), drift = 10f,
-        tiltX = 200f, tiltY = 80f, tiltZ = 200f, seed = 2.1f,
-    ),
-    PetalSpec(
-        1.00f, 0.06f, 0.24f, width = 0.48f, length = 0.84f, backLength = 0.6f,
-        twist = 0.35f, twistOffset = 0.1f, bend = 0.9f,
-        spinAxis = Axis(-0.6f, 0.5f, 0.6f), spin = 30f, driftAxis = Axis(0.2f, 1f, -0.3f), drift = -12f,
-        tiltX = 280f, tiltY = 320f, tiltZ = 280f, seed = 2.9f,
-    ),
-    PetalSpec(
-        0.10f, 0.30f, 1.00f, width = 0.70f, length = 0.86f, backLength = 0.35f,
-        twist = 0.30f, twistOffset = 1.2f, bend = 0.8f,
-        spinAxis = Axis(0.5f, 0.8f, -0.3f), spin = -36f, driftAxis = Axis(1f, -0.3f, 0.3f), drift = 9f,
-        tiltX = 330f, tiltY = 220f, tiltZ = 15f, seed = 3.6f,
+        0.03f, 0.24f, 1.00f, width = 0.6f, length = 0.86f,
+        twist = 1.4f, twistOffset = 1.57f, bend = 0.6f,
+        spinAxis = Axis(0.3f, 1f, 0.4f), spin = 45f, driftAxis = Axis(1f, 0f, 0.3f), drift = 6f,
+        tiltX = 0f, tiltY = 0f, tiltZ = 30f, seed = 0.7f,
     ),
 )
 
@@ -123,25 +95,22 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
     private val mc = FloatArray(9)
 
     init {
-        var peak = 0f
         for (i in 0..lengthSteps) {
             val t = 2f * i / lengthSteps - 1f
             val a = abs(t)
             stepT[i] = t
-            profile[i] = a.pow(0.85f) * sqrt(max(0f, 1f - a.pow(2.4f)))
-            peak = max(peak, profile[i])
+            profile[i] = sqrt(max(0f, 1f - a * a))
         }
-        for (i in 0..lengthSteps) profile[i] /= peak
         for (j in 0..widthSteps) {
             stepS[j] = sin(PI.toFloat() / 2f * (2f * j / widthSteps - 1f))
         }
         for (i in 0..lengthSteps) {
             for (j in 0..widthSteps) {
-                val s = stepS[j]
-                val t = abs(stepT[i])
-                val rho = min(1f, sqrt(0.85f * s * s + 0.6f * t * t))
-                texture[i * (widthSteps + 1) + j] = (0.38f + 0.62f * rho.pow(1.6f)) *
-                    smoothstep(1f, 0.94f, abs(s)) * smoothstep(1f, 0.94f, t)
+                // Radial gradient over the ellipse's own square texture space, 1 on the outline.
+                val u = profile[i] * stepS[j]
+                val v = stepT[i]
+                val rho = min(1f, sqrt(u * u + v * v))
+                texture[i * (widthSteps + 1) + j] = (0.3f + 0.7f * rho.pow(1.6f)) * smoothstep(1f, 0.94f, rho)
             }
         }
 
@@ -193,12 +162,10 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         val bend = spec.bend + BEND_WIGGLE * wiggle(time, WIGGLE_HZ * 0.8f, spec.seed + 5.3f)
         orientation(spec, time)
         val length = spec.length
-        val backWidth = spec.width * (0.5f + 0.5f * spec.backLength)
 
         for (i in 0..lengthSteps) {
-            val t = stepT[i]
-            val halfWidth = profile[i] * if (t < 0f) backWidth else spec.width
-            val y0 = t * if (t < 0f) length * spec.backLength else length
+            val halfWidth = profile[i] * spec.width
+            val y0 = stepT[i] * length
             for (j in 0..widthSteps) {
                 val x0 = halfWidth * stepS[j]
                 deform(x0, y0, length, twist, spec.twistOffset, bend, 0)
@@ -324,9 +291,10 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val CONTAIN_END = 0.92f
         const val GRAZE_FLOOR = 0.10f
         const val FOG_FAR = 0.18f
-        const val TWIST_WIGGLE = 0.12f
-        const val BEND_WIGGLE = 0.20f
-        const val WIGGLE_HZ = 0.06f
+        // After Effects' wiggle(0.2, 15) on the twist and bend angles.
+        const val TWIST_WIGGLE = 0.26f
+        const val BEND_WIGGLE = 0.3f
+        const val WIGGLE_HZ = 0.2f
         const val RIM_GAIN = 0.36f
         const val RIM_BASE_R = 0.015f
         const val RIM_BASE_G = 0.018f
