@@ -1,38 +1,29 @@
 package com.jetbrains.kmpapp
 
-import androidx.compose.foundation.clickable
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.jetbrains.kmpapp.siri.SiriOrb
 
 @Composable
 fun App() {
-    var state by remember { mutableStateOf(SiriOrbState.Listening) }
-    MaterialTheme(
-        colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black)
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black),
+        contentAlignment = Alignment.Center,
     ) {
-        Surface(color = Color.Black) {
-            SiriOrbScreen(
-                modifier = Modifier.clickable {
-                    state = state.nextState()
-                },
-                state = state,
-            )
-        }
+        SiriOrb(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp)
+                .aspectRatio(1f),
+        )
     }
-}
-
-private fun SiriOrbState.nextState(): SiriOrbState = when (this) {
-    SiriOrbState.Listening -> SiriOrbState.Thinking
-    SiriOrbState.Thinking -> SiriOrbState.Speaking
-    SiriOrbState.Speaking -> SiriOrbState.Idle
-    SiriOrbState.Idle -> SiriOrbState.Error
-    SiriOrbState.Error -> SiriOrbState.Listening
 }
