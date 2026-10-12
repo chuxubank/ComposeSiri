@@ -97,8 +97,8 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
     private val petalVertexCount = petals.size * verticesPerPetal
 
     private val rimSegments = 120
-    private val rimRadii = floatArrayOf(0.66f, 0.84f, 0.93f, 0.97f, 0.993f, 1.012f, 1.045f)
-    private val rimProfile = floatArrayOf(0f, 0.12f, 0.36f, 0.72f, 1f, 0.30f, 0f)
+    private val rimRadii = floatArrayOf(0.62f, 0.76f, 0.86f, 0.92f, 0.96f, 0.985f, 1.0f, 1.02f, 1.055f)
+    private val rimProfile = floatArrayOf(0f, 0.07f, 0.20f, 0.40f, 0.66f, 0.90f, 1f, 0.42f, 0f)
     private val rimVertexCount = rimSegments * rimRadii.size
 
     val vertexCount = petalVertexCount + rimVertexCount
@@ -250,7 +250,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
     }
 
     private fun updateRim(cx: Float, cy: Float, radiusPx: Float) {
-        repeat(5) {
+        repeat(2) {
             for (i in 0 until tintBins) {
                 val l = (i + tintBins - 1) % tintBins
                 val r = (i + 1) % tintBins
@@ -327,10 +327,10 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val TWIST_WIGGLE = 0.12f
         const val BEND_WIGGLE = 0.20f
         const val WIGGLE_HZ = 0.06f
-        const val RIM_GAIN = 0.42f
-        const val RIM_BASE_R = 0.03f
-        const val RIM_BASE_G = 0.035f
-        const val RIM_BASE_B = 0.06f
+        const val RIM_GAIN = 0.36f
+        const val RIM_BASE_R = 0.015f
+        const val RIM_BASE_G = 0.018f
+        const val RIM_BASE_B = 0.032f
     }
 }
 
