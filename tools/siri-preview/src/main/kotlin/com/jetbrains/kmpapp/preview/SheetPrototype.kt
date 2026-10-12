@@ -214,7 +214,9 @@ half4 main(float2 fc){
             if (k == 2) { rateQ = float3(-30.0, -30.0, 30.0);  offI = float3(2.408, 2.427, 2.2); }
             if (k == 3) { rateQ = float3(-60.0, -60.0, 60.0);  offI = float3(0.125, 0.104, 4.0); }
             if (k == 4) { rateQ = float3(-30.0, 30.0, -60.0);  offI = float3(3.995, 2.301, 0.5); }
-            if (k == 5) { rateQ = float3(30.0, -60.0, 60.0);  offI = float3(2.0, 1.2, 2.9); }   // ae-v4: deep blue k5 spins/phases offset from blue k1 (k1 = -60,30,-30 deg/s); 30/60 only -> 12 s loop
+            if (k == 1) { rateQ = float3(30.0, 0.0, 60.0);  offI = float3(0.0, 0.0, 1.1); }   // ae-v5: blue k1 tumbles about x at 30 deg/s, y held face-on
+            if (k == 5) { rateQ = float3(30.0, 0.0, -30.0);  offI = float3(1.5708, 0.0, 2.9); }   // ae-v5: blue k5 same x rate, 90 deg phase from k1 -> one blue within 45 deg of face-on every frame (check: designer/ae_v5/faceon_check.py)
+            if (k == 0) { rateQ = float3(0.0, 0.0, 30.0);  offI = float3(0.35, 0.2, 0.3); }   // ae-v5: cyan k0 held ~23 deg off face-on (|n.z| ~0.92), spins in-plane 30 deg/s -> face visible every frame
             float3 angI = offI + rateQ * (PI/180.0) * tI;
             float3x3 RI = rotZ(angI.z) * rotY(angI.y) * rotX(angI.x);
             float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
@@ -232,8 +234,8 @@ half4 main(float2 fc){
         ws = mix(ws, (k == 7 ? 0.72 : k == 6 ? 0.5625 : k == 0 ? 0.875 : (k == 1 ? 0.975 : (k == 2 ? 0.94 : (k == 3 ? 0.9375 : (k == 4 ? 0.8125 : 0.75))))), uIdle);   // r49: teal/blue/cyan 1.0-1.1, reds 0.9 / 0.98 // r51e k6 size 1.0 // r52: smaller fill sheets, ^0.6 lenses over-covered (60%) // r64: half-length 0.8*ws = 0.76-0.84R // r65: big blue k1 0.85R, big red k2 0.75R, fills 0.56-0.62R, blades 0.8R // r66: k4 0.65R // r67: big blue 0.78R // r69: blades k3/k5/k6 half-length 0.75R // r73: cyan fill k0 half-length 0.7R; blades k3/k5/k6 0.75/0.6/0.45R
         { float tB = uSpinT / 0.6; float bl = sin((mod(fk, 2.0) < 0.5 ? 1.0472 : 2.0944) * tB + fk * 2.3); gLB = (k == 3 || k == 5 || k == 6) ? 1.0 + 0.2 * uIdle * sin((k == 5 ? 2.0944 : 1.0472) * tB + fk * 1.3) : 1.0 - uIdle * 0.075 * (1.0 + bl); gWB = 1.0 + 0.15 * uIdle * sin((mod(fk, 3.0) < 1.0 ? 2.0944 : 1.0472) * tB + fk * 1.1 + 0.7); if (k == 2) { float s2 = sin(1.0472 * tB + 3.4 + uFPh.x); gLB = 1.0 - uIdle * 0.075 * (1.0 - s2); gWB = gLB; } bend += 0.08 * uIdle * sin((mod(fk, 2.0) < 0.5 ? 2.0944 : 1.0472) * tB + fk * 0.9 + 1.9); }   // r74: sheet length breathes inward only (0..-15%); blades +-20%; k2 size peaks when its roll is most edge-on (half a period from its face-on peak); bow +-0.08
         if (uIdle > 0.5) {   // ae-v2: half length 0.70-0.80 R, half width 0.45-0.55 R, no breathing
-            float hl = k == 0 ? 0.75 : (k == 1 ? 0.80 : (k == 2 ? 0.70 : (k == 3 ? 0.78 : (k == 4 ? 0.72 : 0.76))));
-            float hw2 = k == 0 ? 0.50 : (k == 1 ? 0.55 : (k == 2 ? 0.45 : (k == 3 ? 0.48 : (k == 4 ? 0.52 : 0.47))));
+            float hl = k == 0 ? 0.80 : (k == 1 ? 0.80 : (k == 2 ? 0.70 : (k == 3 ? 0.78 : (k == 4 ? 0.72 : 0.76))));
+            float hw2 = k == 0 ? 0.55 : (k == 1 ? 0.55 : (k == 2 ? 0.45 : (k == 3 ? 0.48 : (k == 4 ? 0.52 : 0.47))));   // ae-v5: cyan k0 size = blue k1 (0.80 x 0.55 R)
             gLB = hl / 0.8; gWB = hw2 / 0.45; ws = 1.0;
         }
         { float tW = uSpinT / 0.6;   // ae-pipeline: loopable wiggle(0.2,15) on twist [deg], wiggle(0.2,10) on bend [read as 0.10 R]
