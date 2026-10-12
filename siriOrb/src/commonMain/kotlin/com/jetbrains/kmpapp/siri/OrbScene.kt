@@ -15,7 +15,7 @@ import kotlin.math.sqrt
 /**
  * One translucent surface of the orb: two teardrop lobes meeting tip to tip at the orb centre,
  * with a texture that is clear inside and dense towards the rim. The surface is twisted around and
- * bent along its long axis, and keeps spinning around the centre.
+ * bent along its long axis, spins around one axis and slowly drifts around a second one.
  */
 internal class PetalSpec(
     val red: Float,
@@ -23,30 +23,70 @@ internal class PetalSpec(
     val blue: Float,
     val width: Float,
     val length: Float,
-    /** Twist in radians from the centre to either end. */
+    /** Length of the lobe on the other side of the centre, as a fraction of [length]. */
+    val backLength: Float,
+    /** Twist in radians from the centre to the end of the main lobe. */
     val twist: Float,
     val twistOffset: Float,
-    val twistWiggle: Float,
     /** Curvature of the bend along the long axis, in 1 / orb radius. */
     val bend: Float,
-    val bendWiggle: Float,
-    /** Spin rates around the x, y and z axes in degrees per second. */
-    val spinX: Float,
-    val spinY: Float,
-    val spinZ: Float,
-    val phaseX: Float,
-    val phaseY: Float,
-    val phaseZ: Float,
+    val spinAxis: Axis,
+    /** Degrees per second around [spinAxis]. */
+    val spin: Float,
+    val driftAxis: Axis,
+    /** Degrees per second around [driftAxis]. */
+    val drift: Float,
+    /** Starting orientation as rotations around x, y and z, in degrees. */
+    val tiltX: Float,
+    val tiltY: Float,
+    val tiltZ: Float,
     val seed: Float,
 )
 
+internal class Axis(x: Float, y: Float, z: Float) {
+    private val length = sqrt(x * x + y * y + z * z)
+    val x = x / length
+    val y = y / length
+    val z = z / length
+}
+
 internal val DefaultPetals = listOf(
-    PetalSpec(1.00f, 0.13f, 0.17f, 0.74f, 0.84f, 0.35f, 0.3f, 0.25f, 2.0f, 0.35f, 21f, -33f, 14f, 10f, 40f, 0f, 0.1f),
-    PetalSpec(0.06f, 0.28f, 1.00f, 0.76f, 0.86f, 0.30f, 1.9f, 0.25f, 1.8f, 0.35f, -27f, 19f, -22f, 70f, 160f, 50f, 0.7f),
-    PetalSpec(0.05f, 0.78f, 1.00f, 0.58f, 0.82f, 0.65f, 0.9f, 0.40f, 1.0f, 0.45f, 31f, 24f, 18f, 130f, 260f, 120f, 1.3f),
-    PetalSpec(0.03f, 0.80f, 0.45f, 0.66f, 0.80f, 0.40f, 2.6f, 0.30f, 1.7f, 0.40f, -18f, -29f, 25f, 200f, 80f, 200f, 2.1f),
-    PetalSpec(1.00f, 0.12f, 0.30f, 0.58f, 0.82f, 0.60f, 0.1f, 0.40f, 1.1f, 0.45f, 25f, 36f, -15f, 280f, 320f, 280f, 2.9f),
-    PetalSpec(0.15f, 0.34f, 1.00f, 0.72f, 0.84f, 0.35f, 1.2f, 0.25f, 1.9f, 0.35f, -35f, 15f, 29f, 330f, 220f, 15f, 3.6f),
+    PetalSpec(
+        1.00f, 0.13f, 0.17f, width = 0.70f, length = 0.84f, backLength = 1f,
+        twist = 0.30f, twistOffset = 0.3f, bend = 0.8f,
+        spinAxis = Axis(0.3f, 1f, 0.2f), spin = 34f, driftAxis = Axis(1f, 0f, 0.4f), drift = 9f,
+        tiltX = 10f, tiltY = 40f, tiltZ = 0f, seed = 0.1f,
+    ),
+    PetalSpec(
+        0.06f, 0.28f, 1.00f, width = 0.72f, length = 0.86f, backLength = 1f,
+        twist = 0.25f, twistOffset = 1.9f, bend = 0.7f,
+        spinAxis = Axis(-0.2f, 0.9f, -0.5f), spin = -28f, driftAxis = Axis(0.3f, 0.2f, 1f), drift = 11f,
+        tiltX = 70f, tiltY = 160f, tiltZ = 50f, seed = 0.7f,
+    ),
+    PetalSpec(
+        0.05f, 0.78f, 1.00f, width = 0.56f, length = 0.84f, backLength = 1f,
+        twist = 0.40f, twistOffset = 0.9f, bend = 0.9f,
+        spinAxis = Axis(0.8f, 0.3f, 0.5f), spin = 38f, driftAxis = Axis(0f, 1f, 0.3f), drift = -8f,
+        tiltX = 130f, tiltY = 260f, tiltZ = 120f, seed = 1.3f,
+    ),
+    PetalSpec(
+        0.03f, 0.80f, 0.45f, width = 0.62f, length = 0.82f, backLength = 1f,
+        twist = 0.30f, twistOffset = 2.6f, bend = 0.8f,
+        spinAxis = Axis(0.4f, -0.6f, 0.7f), spin = -32f, driftAxis = Axis(0.7f, 0.7f, 0f), drift = 10f,
+        tiltX = 200f, tiltY = 80f, tiltZ = 200f, seed = 2.1f,
+    ),
+    PetalSpec(
+        1.00f, 0.12f, 0.30f, width = 0.56f, length = 0.84f, backLength = 1f,
+        twist = 0.35f, twistOffset = 0.1f, bend = 0.9f,
+        spinAxis = Axis(-0.6f, 0.5f, 0.6f), spin = 30f, driftAxis = Axis(0.2f, 1f, -0.3f), drift = -12f,
+        tiltX = 280f, tiltY = 320f, tiltZ = 280f, seed = 2.9f,
+    ),
+    PetalSpec(
+        0.15f, 0.34f, 1.00f, width = 0.66f, length = 0.86f, backLength = 1f,
+        twist = 0.30f, twistOffset = 1.2f, bend = 0.8f,
+        spinAxis = Axis(0.5f, 0.8f, -0.3f), spin = -36f, driftAxis = Axis(1f, -0.3f, 0.3f), drift = 9f,
+        tiltX = 330f, tiltY = 220f, tiltZ = 15f, seed = 3.6f,
+    ),
 )
 
 internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
@@ -78,6 +118,9 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
 
     private val local = FloatArray(9)
     private val m = FloatArray(9)
+    private val ma = FloatArray(9)
+    private val mb = FloatArray(9)
+    private val mc = FloatArray(9)
 
     init {
         var peak = 0f
@@ -97,8 +140,8 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
                 val s = stepS[j]
                 val t = abs(stepT[i])
                 val rho = min(1f, sqrt(0.85f * s * s + 0.6f * t * t))
-                texture[i * (widthSteps + 1) + j] = (0.18f + 0.82f * rho.pow(1.6f)) *
-                    smoothstep(1f, 0.86f, abs(s)) * smoothstep(1f, 0.9f, t)
+                texture[i * (widthSteps + 1) + j] = (0.38f + 0.62f * rho.pow(1.6f)) *
+                    smoothstep(1f, 0.94f, abs(s)) * smoothstep(1f, 0.94f, t)
             }
         }
 
@@ -146,18 +189,16 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         cy: Float,
         radiusPx: Float,
     ) {
-        val twist = spec.twist + spec.twistWiggle * wiggle(time, 0.11f, spec.seed)
-        val bend = spec.bend + spec.bendWiggle * wiggle(time, 0.09f, spec.seed + 5.3f)
-        rotation(
-            spec.phaseX + spec.spinX * time,
-            spec.phaseY + spec.spinY * time,
-            spec.phaseZ + spec.spinZ * time,
-        )
+        val twist = spec.twist + TWIST_WIGGLE * wiggle(time, WIGGLE_HZ, spec.seed)
+        val bend = spec.bend + BEND_WIGGLE * wiggle(time, WIGGLE_HZ * 0.8f, spec.seed + 5.3f)
+        orientation(spec, time)
         val length = spec.length
+        val backWidth = spec.width * (0.5f + 0.5f * spec.backLength)
 
         for (i in 0..lengthSteps) {
-            val halfWidth = spec.width * profile[i]
-            val y0 = length * stepT[i]
+            val t = stepT[i]
+            val halfWidth = profile[i] * if (t < 0f) backWidth else spec.width
+            val y0 = t * if (t < 0f) length * spec.backLength else length
             for (j in 0..widthSteps) {
                 val x0 = halfWidth * stepS[j]
                 deform(x0, y0, length, twist, spec.twistOffset, bend, 0)
@@ -190,7 +231,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
                 val sy = cy - py * scale
                 val dx = sx - cx; val dy = sy - cy
                 val reach = (dx * dx + dy * dy) / (radiusPx * radiusPx)
-                // Keep the petals inside the glass: they fade out before touching the shell.
+                // Safety net only: the petals are sized to stay inside, this catches extreme poses.
                 val contain = smoothstep(CONTAIN_END, CONTAIN_START, reach)
                 val intensity = GAIN * alpha * film * fog * contain
                 val v = base + k
@@ -261,29 +302,57 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         }
     }
 
-    private fun rotation(degX: Float, degY: Float, degZ: Float) {
+    /** m = spin(t) * drift(t) * tilt */
+    private fun orientation(spec: PetalSpec, time: Float) {
         val toRad = PI.toFloat() / 180f
-        val cx = cos(degX * toRad); val sx = sin(degX * toRad)
-        val cy = cos(degY * toRad); val sy = sin(degY * toRad)
-        val cz = cos(degZ * toRad); val sz = sin(degZ * toRad)
-        // Rz * Ry * Rx
-        m[0] = cz * cy; m[1] = cz * sy * sx - sz * cx; m[2] = cz * sy * cx + sz * sx
-        m[3] = sz * cy; m[4] = sz * sy * sx + cz * cx; m[5] = sz * sy * cx - cz * sx
-        m[6] = -sy; m[7] = cy * sx; m[8] = cy * cx
+        axisAngle(AxisX, spec.tiltX * toRad, ma)
+        axisAngle(AxisY, spec.tiltY * toRad, mb)
+        multiply(mb, ma, mc)
+        axisAngle(AxisZ, spec.tiltZ * toRad, ma)
+        multiply(ma, mc, mb)
+        axisAngle(spec.driftAxis, spec.drift * time * toRad, ma)
+        multiply(ma, mb, mc)
+        axisAngle(spec.spinAxis, spec.spin * time * toRad, ma)
+        multiply(ma, mc, m)
     }
 
     private companion object {
         const val EPS = 1e-3f
         const val CAMERA = 5f
         const val GAIN = 0.24f
-        const val CONTAIN_START = 0.62f
-        const val CONTAIN_END = 0.90f
+        const val CONTAIN_START = 0.72f
+        const val CONTAIN_END = 0.92f
         const val GRAZE_FLOOR = 0.10f
         const val FOG_FAR = 0.18f
+        const val TWIST_WIGGLE = 0.12f
+        const val BEND_WIGGLE = 0.20f
+        const val WIGGLE_HZ = 0.06f
         const val RIM_GAIN = 0.42f
         const val RIM_BASE_R = 0.03f
         const val RIM_BASE_G = 0.035f
         const val RIM_BASE_B = 0.06f
+    }
+}
+
+private val AxisX = Axis(1f, 0f, 0f)
+private val AxisY = Axis(0f, 1f, 0f)
+private val AxisZ = Axis(0f, 0f, 1f)
+
+private fun axisAngle(axis: Axis, angle: Float, out: FloatArray) {
+    val c = cos(angle)
+    val s = sin(angle)
+    val t = 1f - c
+    val x = axis.x; val y = axis.y; val z = axis.z
+    out[0] = x * x * t + c; out[1] = x * y * t - z * s; out[2] = x * z * t + y * s
+    out[3] = y * x * t + z * s; out[4] = y * y * t + c; out[5] = y * z * t - x * s
+    out[6] = z * x * t - y * s; out[7] = z * y * t + x * s; out[8] = z * z * t + c
+}
+
+private fun multiply(a: FloatArray, b: FloatArray, out: FloatArray) {
+    for (r in 0..2) {
+        for (c in 0..2) {
+            out[r * 3 + c] = a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c]
+        }
     }
 }
 
