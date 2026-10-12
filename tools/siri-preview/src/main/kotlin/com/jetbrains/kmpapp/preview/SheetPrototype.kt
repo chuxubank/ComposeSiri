@@ -1101,6 +1101,8 @@ private fun v11ToImage(buf: FloatArray, size: Int): org.jetbrains.skia.Image {
  *  only as their min channel runs from V11_TM_WHITE[0] to [1] (all three colours overlapping), so a single over-bright petal keeps its hue. */ // ae-v20
 internal var V11_TM_KNEE = 0.6 // ae-v20
 internal var V11_TM_WHITE = doubleArrayOf(0.6, 1.5) // ae-v20
+/** Below the white rolloff, this share of the common (min-channel) part is removed so a weak overlap, e.g. red over dim cyan, stays red instead of washing to pink. */ // ae-v20
+internal var V11_TM_DESAT_CUT = 0.6 // ae-v20
 /** ae-v11 frame: base + multi-level gaussian glow of the hot part, then one tone map + sRGB encode. V11_ONLY=k writes petal k's flat footprint mask instead.
  *  ae-v20: everything stays linear HDR on the CPU; Skia's raster pipeline clamps to [0, 1], so it only runs the blurs, on inputs scaled by 1/V11_GLOW_SCALE. */
 internal const val V11_GLOW_SCALE = 64f // ae-v20
@@ -1133,10 +1135,12 @@ internal fun v11RenderFrame(t: Double, size: Int, file: Path) {
     }
     val px = ByteArray(size * size * 4); val knee = V11_TM_KNEE
     for (i in 0 until size * size) {
-        val h = DoubleArray(3) { kotlin.math.max(hdr[i * 3 + it].toDouble(), 0.0) }
+        val h0 = DoubleArray(3) { kotlin.math.max(hdr[i * 3 + it].toDouble(), 0.0) }
+        val mn = minOf(h0[0], h0[1], h0[2])
+        val wk = v11Smooth(V11_TM_WHITE[0], V11_TM_WHITE[1], mn)
+        val h = DoubleArray(3) { h0[it] - V11_TM_DESAT_CUT * mn * (1.0 - wk) }
         val m = maxOf(h[0], h[1], h[2])
         val tm = if (m <= knee) m else knee + (1.0 - knee) * (1.0 - kotlin.math.exp(-(m - knee) / (1.0 - knee)))
-        val wk = v11Smooth(V11_TM_WHITE[0], V11_TM_WHITE[1], minOf(h[0], h[1], h[2]))
         val dx = i % size + 0.5 - size / 2.0; val dy = i / size + 0.5 - size / 2.0
         val inside = dx * dx + dy * dy < (0.45 * size) * (0.45 * size)
         for (ch in 0..2) {
