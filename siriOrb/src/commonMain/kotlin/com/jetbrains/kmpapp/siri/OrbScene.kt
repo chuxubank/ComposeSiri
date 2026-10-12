@@ -52,37 +52,37 @@ internal class Axis(x: Float, y: Float, z: Float) {
 
 internal val DefaultPetals = listOf(
     PetalSpec(
-        1.00f, 0.13f, 0.17f, width = 0.70f, length = 0.84f, backLength = 1f,
+        1.00f, 0.13f, 0.17f, width = 0.74f, length = 0.84f, backLength = 0.45f,
         twist = 0.30f, twistOffset = 0.3f, bend = 0.8f,
         spinAxis = Axis(0.3f, 1f, 0.2f), spin = 34f, driftAxis = Axis(1f, 0f, 0.4f), drift = 9f,
         tiltX = 10f, tiltY = 40f, tiltZ = 0f, seed = 0.1f,
     ),
     PetalSpec(
-        0.06f, 0.28f, 1.00f, width = 0.72f, length = 0.86f, backLength = 1f,
+        0.06f, 0.28f, 1.00f, width = 0.76f, length = 0.86f, backLength = 0.5f,
         twist = 0.25f, twistOffset = 1.9f, bend = 0.7f,
         spinAxis = Axis(-0.2f, 0.9f, -0.5f), spin = -28f, driftAxis = Axis(0.3f, 0.2f, 1f), drift = 11f,
         tiltX = 70f, tiltY = 160f, tiltZ = 50f, seed = 0.7f,
     ),
     PetalSpec(
-        0.05f, 0.78f, 1.00f, width = 0.56f, length = 0.84f, backLength = 1f,
+        0.05f, 0.78f, 1.00f, width = 0.46f, length = 0.84f, backLength = 0.8f,
         twist = 0.40f, twistOffset = 0.9f, bend = 0.9f,
         spinAxis = Axis(0.8f, 0.3f, 0.5f), spin = 38f, driftAxis = Axis(0f, 1f, 0.3f), drift = -8f,
         tiltX = 130f, tiltY = 260f, tiltZ = 120f, seed = 1.3f,
     ),
     PetalSpec(
-        0.03f, 0.80f, 0.45f, width = 0.62f, length = 0.82f, backLength = 1f,
+        0.03f, 0.80f, 0.45f, width = 0.64f, length = 0.82f, backLength = 0.4f,
         twist = 0.30f, twistOffset = 2.6f, bend = 0.8f,
         spinAxis = Axis(0.4f, -0.6f, 0.7f), spin = -32f, driftAxis = Axis(0.7f, 0.7f, 0f), drift = 10f,
         tiltX = 200f, tiltY = 80f, tiltZ = 200f, seed = 2.1f,
     ),
     PetalSpec(
-        1.00f, 0.12f, 0.30f, width = 0.56f, length = 0.84f, backLength = 1f,
+        1.00f, 0.12f, 0.30f, width = 0.48f, length = 0.84f, backLength = 0.6f,
         twist = 0.35f, twistOffset = 0.1f, bend = 0.9f,
         spinAxis = Axis(-0.6f, 0.5f, 0.6f), spin = 30f, driftAxis = Axis(0.2f, 1f, -0.3f), drift = -12f,
         tiltX = 280f, tiltY = 320f, tiltZ = 280f, seed = 2.9f,
     ),
     PetalSpec(
-        0.15f, 0.34f, 1.00f, width = 0.66f, length = 0.86f, backLength = 1f,
+        0.15f, 0.34f, 1.00f, width = 0.70f, length = 0.86f, backLength = 0.35f,
         twist = 0.30f, twistOffset = 1.2f, bend = 0.8f,
         spinAxis = Axis(0.5f, 0.8f, -0.3f), spin = -36f, driftAxis = Axis(1f, -0.3f, 0.3f), drift = 9f,
         tiltX = 330f, tiltY = 220f, tiltZ = 15f, seed = 3.6f,
