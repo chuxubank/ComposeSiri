@@ -209,7 +209,12 @@ half4 main(float2 fc){
             // 12 s loop (ae-v2): see rateQ
             float tI = uSpinT / 0.6;   // spinT runs at the idle speed 0.6 -> real seconds
             float3 rateQ = sign(rate) * mix(float3(30.0), float3(60.0), step(float3(40.0), abs(rate)));   // ae-v2: AE 30 -> 30 deg/s, 45 -> 60 deg/s, signs kept; 30 deg/s = 1 turn / 12 s, 60 = 2 turns -> 12 s loop
-            float3 angI = off + rateQ * (PI/180.0) * tI;
+            float3 offI = off;
+            // ae-v3: three red sheets (k2,k3,k4), rates/phases searched so at every frame of the 12 s loop one red is within 41 deg of face-on (|n.z| >= 0.757; check: designer/red_faceon_check.py)
+            if (k == 2) { rateQ = float3(-30.0, -30.0, 30.0);  offI = float3(2.408, 2.427, 2.2); }
+            if (k == 3) { rateQ = float3(-60.0, -60.0, 60.0);  offI = float3(0.125, 0.104, 4.0); }
+            if (k == 4) { rateQ = float3(-30.0, 30.0, -60.0);  offI = float3(3.995, 2.301, 0.5); }
+            float3 angI = offI + rateQ * (PI/180.0) * tI;
             float3x3 RI = rotZ(angI.z) * rotY(angI.y) * rotX(angI.x);
             float3x3 Rm = R * (1.0 - uIdle) + RI * uIdle;
             float3 c0 = normalize(Rm[0]); float3 c1 = normalize(Rm[1] - dot(Rm[1], c0) * c0); float3 c2 = cross(c0, c1);
@@ -296,7 +301,7 @@ half4 main(float2 fc){
         if (uIdle > 0.5 && k == 5) baseC = half3(0.235, 0.784, 0.94);   // r46: sixth sheet cyan #3CC8F0
         if (uIdle > 0.5 && k == 6) baseC = half3(0.184, 0.42, 1.0);   // r51e: 7th sheet blue #2F6BFF
         if (uIdle > 0.5 && k == 7) baseC = half3(0.184, 0.42, 1.0);   // r60: 8th sheet half-side blue fill
-        if (uIdle > 0.5) { if (k == 2 || k == 4) baseC = half3(1.0, 0.353, 0.431); else if (k == 0 || k == 5) baseC = half3(0.373, 0.89, 0.91); else baseC = half3(0.29, 0.482, 1.0); }   // r64: red #FF5A6E, cyan #5FE3E8, blue #4A7BFF
+        if (uIdle > 0.5) { if (k == 2 || k == 3 || k == 4) baseC = half3(1.0, 0.353, 0.431);   /* ae-v3: k3 blue -> red (3 reds) */ else if (k == 0 || k == 5) baseC = half3(0.373, 0.89, 0.91); else baseC = half3(0.29, 0.482, 1.0); }   // r64: red #FF5A6E, cyan #5FE3E8, blue #4A7BFF
         if (uIdle > 0.5) { half lumC = dot(baseC, half3(0.299, 0.587, 0.114)); baseC = mix(half3(lumC), baseC, 0.85) * 0.9; }   // r71: face saturation -15%, value -10%
         half4 col = half4(pow(baseC, half3(2.2)), 1);
         col.rgb = mix(col.rgb, half3(0.62, 0.62, 0.64), half(uGrey));   // desaturate to grey-white
@@ -706,11 +711,11 @@ internal fun renderSheetStills(
         })
         val rimA = (sh * (1f - prm.move)).coerceIn(0f, 1f)
         if (rimA > 0.01f) {
-            fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (mixF(55f, 64f, id) * rimA).toInt().coerceIn(0, 255) })   // r55 idle: outer halo peak ~0.15 // r64: rim 0.25
+            fc.saveLayer(null, Paint().apply { blendMode = BlendMode.PLUS; alpha = (mixF(55f, 32f, id) * rimA).toInt().coerceIn(0, 255) })   // r55 idle: outer halo peak ~0.15 // r64: rim 0.25
             fc.drawImage(bodyImg, 0f, 0f, Paint().apply {
                 imageFilter = ImageFilter.makeBlur(radius * 0.25f, radius * 0.25f, FilterTileMode.DECAL)
                 colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
-                    0.15f, 0.15f, 0.15f, 0f, 0f, 0.8f, 0.8f, 0.8f, 0f, 0f, 0.7f, 0.7f, 0.7f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
+                    mixF(0.15f, 0.30f, id), mixF(0.15f, 0.30f, id), mixF(0.15f, 0.30f, id), 0f, 0f, mixF(0.8f, 0.16f, id), mixF(0.8f, 0.16f, id), mixF(0.8f, 0.16f, id), 0f, 0f, mixF(0.7f, 0.33f, id), mixF(0.7f, 0.33f, id), mixF(0.7f, 0.33f, id), 0f, 0f, 0f, 0f, 0f, 1f, 0f))   // ae-v3 idle: halo halved (alpha 64->32), tint red-violet like vol_C rim (~#9C55B0 ratio 0.30:0.16:0.33)
             })
             // keep only the inner band 0.8..1.0 R, nothing outside the ball
             fc.drawCircle(cx, cx, radius * 0.9f, Paint().apply {
@@ -722,7 +727,7 @@ internal fun renderSheetStills(
             fc.drawCircle(cx, cx, radius * 0.995f, Paint().apply { blendMode = BlendMode.DST_IN })
             fc.restore()
         }
-        if (id > 0.01f) {   // r64: in-ball fog
+        if (id > 0.01f && id < 0.5f) {   // ae-v3: in-ball fog off in idle   // r64: in-ball fog
             val fgb = RuntimeShaderBuilder(fogFx); fgb.child("uImg", bodyImg.makeShader()); fgb.uniform("uC", cx, cx); fgb.uniform("uR", radius)   // r74: fog 0.7-1.0R up to 0.2 in the nearest sheet colour (same sampling as the rim)
             fc.drawPaint(Paint().apply { shader = fgb.makeShader(); blendMode = BlendMode.PLUS }) // r64 fix: opaque layer alpha covered the scene; draw PLUS directly
         }
