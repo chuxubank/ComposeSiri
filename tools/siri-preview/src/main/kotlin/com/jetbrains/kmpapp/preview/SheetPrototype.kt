@@ -928,9 +928,9 @@ internal val V11_GROUP_RATE = doubleArrayOf(45.0, -30.0)
 internal val V11_RHO = doubleArrayOf(0.0, 0.105, 0.21, 0.315, 0.42, 0.525, 0.63, 0.735, 0.84, 0.88, 0.92, 0.94, 0.96, 0.97, 0.985, 1.0) // ae-v13
 internal const val V11_NT = 48
 private fun v11Lin(v: Double) = Math.pow(v, 2.2)
-internal val V11_RED = doubleArrayOf(v11Lin(0.878) * 1.7, v11Lin(0.157) * 1.7, v11Lin(0.235) * 1.7) // ae-v11: share balance gain // ae-v12 // ae-v13 // ae-v14
-internal val V11_BLUE = doubleArrayOf(v11Lin(0.29) * 0.8, v11Lin(0.482) * 0.8, v11Lin(1.0) * 0.8) // ae-v11: share balance gain // ae-v12 // ae-v13 // ae-v15
-internal val V11_CYAN = doubleArrayOf(v11Lin(0.24) * 1.4, v11Lin(0.86) * 1.4, v11Lin(0.80) * 1.4) // ae-v11: share balance gain // ae-v12 // ae-v13 // ae-v14 // ae-v15
+internal val V11_RED = doubleArrayOf(v11Lin(0.878) * 1.1, v11Lin(0.157) * 1.1, v11Lin(0.235) * 1.1) // ae-v11: share balance gain // ae-v12 // ae-v13 // ae-v14 // ae-v16
+internal val V11_BLUE = doubleArrayOf(v11Lin(0.29) * 1.1, v11Lin(0.482) * 1.1, v11Lin(1.0) * 1.1) // ae-v11: share balance gain // ae-v12 // ae-v13 // ae-v15 // ae-v16
+internal val V11_CYAN = doubleArrayOf(v11Lin(0.24) * 0.75, v11Lin(0.86) * 0.75, v11Lin(0.80) * 0.75) // ae-v11: share balance gain // ae-v12 // ae-v13 // ae-v14 // ae-v15 // ae-v16
 internal var V11_PETALS = listOf(
     V11Petal(V11_RED, 0, 0.0, 20.0, 0.9, 0.5749, 0.2407, 0.7045, 1.0), // ae-v12 // ae-v13
     V11Petal(V11_RED, 1, 150.0, 200.0, 0.0, 4.7289, 5.8691, 0.6012, 2.0), // ae-v12 // ae-v13
@@ -941,11 +941,22 @@ internal var V11_PETALS = listOf(
 )
 
 /** World-space mesh of petal p at time t: [V11_RHO.size][V11_NT] points, each DoubleArray(3) in units of R (camera on +z). */
+internal var V11_BLADE_OFF = 0.35; internal var V11_WIDE_TILT = 65.0; internal var V11_WIDE_UP = 0.35; internal var V11_BACK_BEND = 0.15 // ae-v16
+/** Blade azimuth by colour: red 90, blue 210, cyan 330 deg (three-point star). */ // ae-v16
+internal fun v11BladeAz(p: V11Petal): Double = if (p.rgb === V11_RED) 90.0 else if (p.rgb === V11_BLUE) 210.0 else 330.0 // ae-v16
 internal fun v11PetalMesh(p: V11Petal, t: Double): Array<Array<DoubleArray>> {
     val w = 0.5 + 0.5 * v11Wig(t, p.seed)
     val twRad = Math.toRadians(p.twLo + (p.twHi - p.twLo) * w)
     val rb = p.bendR * (1.0 + 0.15 * v11Wig(t, p.seed + 10.0))
-    val rot = v11Mul(v11RotAxis(V11_GROUP_AXIS[p.group], Math.toRadians(V11_GROUP_RATE[p.group]) * t), v11Euler(p.ex, p.ey, p.ez))
+    val zA = doubleArrayOf(0.0, 0.0, 1.0); val yA = doubleArrayOf(0.0, 1.0, 0.0); val xA = doubleArrayOf(1.0, 0.0, 0.0) // ae-v16
+    val isBlade = p.twHi > 100.0 // ae-v16
+    val rot = if (isBlade) {   // blade: long axis in the screen plane at a fixed azimuth (+-25 deg drift), small tilt/roll wobble // ae-v16
+        val az = Math.toRadians(v11BladeAz(p) + 25.0 * v11Wig(t, p.seed + 20.0)) // ae-v16
+        v11Mul(v11RotAxis(zA, az), v11Mul(v11RotAxis(yA, Math.toRadians(15.0 * v11Wig(t, p.seed + 30.0))), v11RotAxis(xA, Math.toRadians(20.0 * v11Wig(t, p.seed + 40.0))))) // ae-v16
+    } else {                   // wide petal: spins in the screen plane at its group rate, tilted, centre raised (covers the upper hemisphere) // ae-v16
+        v11Mul(v11RotAxis(zA, Math.toRadians(V11_GROUP_RATE[p.group]) * t + p.ez), v11RotAxis(xA, Math.toRadians(V11_WIDE_TILT + 15.0 * v11Wig(t, p.seed + 50.0)))) // ae-v16
+    } // ae-v16
+    val shift = if (isBlade) doubleArrayOf(0.0, 0.0, 0.0) else doubleArrayOf(0.0, V11_WIDE_UP, 0.0) // ae-v16
     return Array(V11_RHO.size) { i ->
         Array(V11_NT) { j ->
             val th = 2.0 * Math.PI * j / V11_NT
@@ -954,14 +965,14 @@ internal fun v11PetalMesh(p: V11Petal, t: Double): Array<Array<DoubleArray>> {
             val ph = if (p.twHi > 100.0) Math.PI / 2.0 - twRad / 2.0 * kotlin.math.sign(u) * (1.0 - (1.0 - kotlin.math.abs(u)) * (1.0 - kotlin.math.abs(u))) else twRad * u / 2.0   // high-twist: twist concentrated at the centre (side-on there, ends face-on) // Twist about the long axis // ae-v14
             val y2 = y * kotlin.math.cos(ph) - z * kotlin.math.sin(ph); val z2 = y * kotlin.math.sin(ph) + z * kotlin.math.cos(ph)
             y = y2; z = z2
-            if (p.bendR > 0.0) {                          // Bend: long axis wrapped onto an arc of radius rb
+            if (p.back) z += V11_BACK_BEND * u * u; if (p.bendR > 0.0 && !p.back) {                          // Bend: long axis wrapped onto an arc of radius rb // ae-v16
                 if (x > 0.0) { val a = x / rb; z += rb * (1.0 - kotlin.math.cos(a)); x = rb * kotlin.math.sin(a) } // ae-v13
             }
-            x += V11_OFF
+            x += if (isBlade) V11_BLADE_OFF else V11_OFF // ae-v16
             if (p.back) doubleArrayOf(x * V11_BACK_S + V11_BACK_OFF[0], y * V11_BACK_S + V11_BACK_OFF[1], z * V11_BACK_S + V11_BACK_OFF[2]) else doubleArrayOf( // ae-v15
-                rot[0][0] * x + rot[0][1] * y + rot[0][2] * z,
-                rot[1][0] * x + rot[1][1] * y + rot[1][2] * z,
-                rot[2][0] * x + rot[2][1] * y + rot[2][2] * z,
+                rot[0][0] * x + rot[0][1] * y + rot[0][2] * z + shift[0], // ae-v16
+                rot[1][0] * x + rot[1][1] * y + rot[1][2] * z + shift[1], // ae-v16
+                rot[2][0] * x + rot[2][1] * y + rot[2][2] * z + shift[2], // ae-v16
             )
         }
     }
@@ -990,8 +1001,8 @@ internal fun v11Tri(buf: FloatArray, size: Int, x: DoubleArray, y: DoubleArray, 
     }
 }
 
-internal var V11_KTHICK = 11.0     // extruded thin disc: edge-on parts read brighter (1 + k (1 - |n.z|)^2) // ae-v12 // ae-v13 // ae-v14 // ae-v15
-internal var V11_EXPO = 0.37      // AE Exposure // ae-v12 // ae-v13 // ae-v14 // ae-v15
+internal var V11_KTHICK = 25.0     // extruded thin disc: edge-on parts read brighter (1 + k (1 - |n.z|)^2) // ae-v12 // ae-v13 // ae-v14 // ae-v15 // ae-v16
+internal var V11_EXPO = 0.25      // AE Exposure // ae-v12 // ae-v13 // ae-v14 // ae-v15 // ae-v16
 internal const val V11_OPACITY = 0.78
 internal var V11_SAT = 0.85; internal var V11_BACK_G = 0.35 // ae-v15
 
@@ -1027,8 +1038,8 @@ internal fun v11PetalLayer(t: Double, size: Int, only: Int = -1): FloatArray {
             val uu = r * kotlin.math.cos(2.0 * Math.PI * j / V11_NT) // ae-v13
             val sAx = (kotlin.math.abs(r * kotlin.math.sin(2.0 * Math.PI * j / V11_NT)) / kotlin.math.max(kotlin.math.sqrt(kotlin.math.max(1.0 - uu * uu, 0.0)), 1e-6)).coerceIn(0.0, 1.0) // ae-v13
             val band = if (sAx < 0.8) 0.2 + 0.8 * v11Smooth(0.0, 0.8, sAx) else 1.0 - v11Smooth(0.8, 1.0, sAx)   // axis 20% -> 100% at 80% width -> 0 at the edge // ae-v14
-            val wideK = if (p.twHi > 100.0) 1.0 else 0.45                                                         // wide petals 60% overall opacity // ae-v14 // ae-v15
-            val a = (if (i == 0) 0.2 else band * (1.0 - f * f)) * wideK // ae-v14
+            val wideK = if (p.twHi > 100.0) 1.0 else 0.35                                                         // wide petals 60% overall opacity // ae-v14 // ae-v15 // ae-v16
+            val a = if (p.back) (1.0 - v11Smooth(0.0, 1.0, r)) * wideK else (if (i == 0) 0.2 else band * (1.0 - f * f)) * wideK   // ae-v16: back petal bright centre fading outward, no bright edge // ae-v14
             for (ch in 0..2) col[i][j][ch] = if (only >= 0) (if (a > 0.02) 1.0 else 0.0)
                 else (rgbS[ch] * a * V11_OPACITY * fog * thick * V11_EXPO).coerceIn(0.0, 1.0) // ae-v15
         }
@@ -1043,7 +1054,7 @@ internal fun v11PetalLayer(t: Double, size: Int, only: Int = -1): FloatArray {
     return buf
 }
 
-internal var V11_CORE = 1.0        // additive white light core strength // ae-v12 // ae-v13 // ae-v14 // ae-v15
+internal var V11_CORE = 3.5        // additive white light core strength // ae-v12 // ae-v13 // ae-v14 // ae-v15 // ae-v16
 internal var V11_CORE_R = 0.18     // core radius (R) // ae-v12
 internal var V11_GLOW = doubleArrayOf(0.05, 0.04, 0.03, 0.025, 0.02, 0.015)   // weights for AE glow radii 30/57/80/111/150/200 // ae-v13
 internal var V11_GLOW_THR = 0.25
