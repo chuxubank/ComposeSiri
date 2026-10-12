@@ -1054,12 +1054,12 @@ internal fun v11PetalLayer(t: Double, size: Int, only: Int = -1): FloatArray {
 }
 
 internal var V11_CORE = 2.4        // additive white light core strength // ae-v12
-internal var V11_CORE_R = 0.18     // core radius (R) // ae-v12
+internal var V11_CORE_R = 0.12     // core radius (R) // ae-v12 // ae-v20
 internal var V11_GLOW = doubleArrayOf(0.10, 0.08, 0.06, 0.05, 0.04, 0.03)   // weights for AE glow radii 30/57/80/111/150/200
 internal var V11_GLOW_THR = 0.25
 internal var V11_GLOW_K = 1.0 // ae-v20
-/** White bloom: the same glow radii applied to the part of every pixel shared by all three channels (where colours overlap); 0 = off. */ // ae-v20
-internal var V11_BLOOM_K = 0.0; internal var V11_BLOOM_THR = 0.5 // ae-v20
+/** White bloom: the same glow radii applied to the part of every pixel shared by all three channels (where colours overlap). */ // ae-v20
+internal var V11_BLOOM_K = 20.0; internal var V11_BLOOM_THR = 0.3 // ae-v20
 internal var V11_RIM = 0.15        // faint red-blue glass rim light, band ~0.03 R // ae-v12
 
 /** Linear HDR base image (size*size*3): background gradient, petals (additive), additive core, glass rim light. */
