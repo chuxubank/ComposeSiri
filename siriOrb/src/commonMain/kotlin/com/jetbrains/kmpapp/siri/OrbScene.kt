@@ -52,26 +52,26 @@ internal class Axis(x: Float, y: Float, z: Float) {
 
 internal val DefaultPetals = listOf(
     PetalSpec(
-        0.03f, 0.24f, 1.00f, width = 0.86f, length = 0.84f, backLength = 0.75f,
+        0.03f, 0.24f, 1.00f, width = 0.96f, length = 0.84f, backLength = 0.75f,
         twist = 0.20f, twistOffset = 1.9f, bend = 0.5f,
         spinAxis = Axis(-0.2f, 0.9f, -0.5f), spin = -16f, driftAxis = Axis(0.3f, 0.2f, 1f), drift = 8f,
         tiltX = 70f, tiltY = 160f, tiltZ = 50f, seed = 0.7f,
     ),
     PetalSpec(
-        0.98f, 0.07f, 0.11f, width = 0.56f, length = 0.84f, backLength = 0.9f,
-        twist = 0.75f, twistOffset = 0.3f, bend = 0.5f,
+        0.98f, 0.07f, 0.11f, width = 0.72f, length = 0.84f, backLength = 0.9f,
+        twist = 0.45f, twistOffset = 0.3f, bend = 0.5f,
         spinAxis = Axis(0.3f, 1f, 0.2f), spin = 24f, driftAxis = Axis(1f, 0f, 0.4f), drift = 7f,
         tiltX = 10f, tiltY = 40f, tiltZ = 0f, seed = 0.1f,
     ),
     PetalSpec(
-        0.05f, 0.78f, 1.00f, width = 0.40f, length = 0.86f, backLength = 1f,
-        twist = 0.85f, twistOffset = 0.9f, bend = 0.45f,
+        0.05f, 0.78f, 1.00f, width = 0.50f, length = 0.86f, backLength = 1f,
+        twist = 0.50f, twistOffset = 0.9f, bend = 0.45f,
         spinAxis = Axis(0.8f, 0.3f, 0.5f), spin = 26f, driftAxis = Axis(0f, 1f, 0.3f), drift = -6f,
         tiltX = 130f, tiltY = 260f, tiltZ = 120f, seed = 1.3f,
     ),
     PetalSpec(
-        0.02f, 0.70f, 0.55f, width = 0.58f, length = 0.82f, backLength = 0.7f,
-        twist = 0.60f, twistOffset = 2.6f, bend = 0.5f,
+        0.02f, 0.70f, 0.55f, width = 0.74f, length = 0.82f, backLength = 0.7f,
+        twist = 0.40f, twistOffset = 2.6f, bend = 0.5f,
         spinAxis = Axis(0.4f, -0.6f, 0.7f), spin = -22f, driftAxis = Axis(0.7f, 0.7f, 0f), drift = 8f,
         tiltX = 200f, tiltY = 80f, tiltZ = 200f, seed = 2.1f,
     ),
