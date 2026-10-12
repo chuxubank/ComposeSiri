@@ -1005,10 +1005,9 @@ internal fun v11Tri(buf: FloatArray, size: Int, x: DoubleArray, y: DoubleArray, 
     }
 }
 
-internal var V11_WIDE_FEATHER0 = 0.93 // wide petals: outer feather starts here (crisp rim) // ae-v20
 internal var V11_WIDE_POW = 3.0      // wide petals: alpha ~ r^pow, more transparent interior // ae-v20
 internal var V11_KTHICK = 5.5     // extruded thin disc: edge-on parts read brighter (1 + k (1 - |n.z|)^2); 1 + k must stay <= 8 // ae-v12 // ae-v20
-internal var V11_EXPO = 0.55       // AE Exposure // ae-v12
+internal var V11_EXPO = 0.7       // AE Exposure // ae-v12 // ae-v21
 internal const val V11_OPACITY = 0.78
 
 /** Petal layer, linear HDR RGB, petals accumulated additively (Screen would need values clamped to [0, 1]). only >= 0: draw just that petal as a flat white footprint mask (overlap checks). */
@@ -1036,9 +1035,8 @@ internal fun v11PetalLayer(t: Double, size: Int, only: Int = -1): FloatArray {
             val fog = 1.0 - ((-q[2]) / 2.17).coerceIn(0.0, 1.0)      // AE fog start 2700 (= camera distance), range 1000 (= 2.17 R)
             val r = V11_RHO[i]
             val wide = p.twHi <= 100.0 // ae-v20
-            val f0 = if (wide) V11_WIDE_FEATHER0 else 0.84 // ae-v20
-            val f = ((r - f0) / (1.0 - f0)).coerceIn(0.0, 1.0)
-            val a = Math.pow(r, if (wide) V11_WIDE_POW else 1.5) * (1.0 - f * f) // inverted circle mask: 0 at the centre -> 1 at the edge, outer feather f0..1.0 // ae-v20
+            val f = ((r - 0.84) / 0.16).coerceIn(0.0, 1.0)
+            val a = Math.pow(r, if (wide) V11_WIDE_POW else 1.5) * (1.0 - f * f) // inverted circle mask: 0 at the centre -> 1 at the edge, outer feather 0.84..1.0 // ae-v20
             for (ch in 0..2) col[i][j][ch] = if (only >= 0) (if (a > 0.02) 1.0 else 0.0)
                 else p.rgb[ch] * a * V11_OPACITY * fog * thick * V11_EXPO // ae-v20: HDR, no per-vertex clamp
         }
@@ -1053,13 +1051,10 @@ internal fun v11PetalLayer(t: Double, size: Int, only: Int = -1): FloatArray {
     return buf
 }
 
-internal var V11_CORE = 2.4        // additive white light core strength // ae-v12
-internal var V11_CORE_R = 0.12     // core radius (R) // ae-v12 // ae-v20
+internal var V11_CORE = 5.0        // additive pure-white round light core strength // ae-v12 // ae-v21
+internal var V11_CORE_R = 0.2      // core radius (R), gaussian edge // ae-v12 // ae-v21
 internal var V11_GLOW = doubleArrayOf(0.10, 0.08, 0.06, 0.05, 0.04, 0.03)   // weights for AE glow radii 30/57/80/111/150/200
 internal var V11_GLOW_THR = 0.25
-internal var V11_GLOW_K = 1.0 // ae-v20
-/** White bloom: the same glow radii applied to the part of every pixel shared by all three channels (where colours overlap). */ // ae-v20
-internal var V11_BLOOM_K = 20.0; internal var V11_BLOOM_THR = 0.3 // ae-v20
 internal var V11_RIM = 0.15        // faint red-blue glass rim light, band ~0.03 R // ae-v12
 
 /** Linear HDR base image (size*size*3): background gradient, petals (additive), additive core, glass rim light. */
@@ -1068,7 +1063,6 @@ internal fun v11Base(t: Double, size: Int): FloatArray {
     val out = FloatArray(size * size * 3)
     val rp = 0.45 * size
     val e = doubleArrayOf(0.00168, 0.00141, 0.00370)
-    val coreT = doubleArrayOf(0.85, 0.97, 1.0)
     val rimA = doubleArrayOf(1.0, 0.231, 0.361); val rimB = doubleArrayOf(0.231, 0.482, 1.0)
     for (py in 0 until size) for (px in 0 until size) {
         val dx = px + 0.5 - size / 2.0; val dy = py + 0.5 - size / 2.0
@@ -1082,7 +1076,7 @@ internal fun v11Base(t: Double, size: Int): FloatArray {
             val bg = if (x < 0.985) e[ch] * v11Smooth(0.0, 0.9, x) * (1.0 - v11Smooth(0.9, 1.0, x)) else 0.0
             val l = layer[o + ch].toDouble() * (1.0 - v11Smooth(0.90, 0.97, x))   // ae-v11: petals fade out before the glass edge
             var v = bg + l // ae-v20
-            v += core * coreT[ch]
+            v += core // ae-v21: pure white
             v += V11_RIM * band * ((1.0 - tt) * rimA[ch] + tt * rimB[ch])
             out[o + ch] = v.toFloat()
         }
@@ -1115,22 +1109,18 @@ internal fun v11RenderFrame(t: Double, size: Int, file: Path) {
     val hdr = if (only >= 0) v11PetalLayer(t, size, only) else v11Base(t, size)
     if (only < 0) {
         val hot = FloatArray(hdr.size) { kotlin.math.max(hdr[it] - V11_GLOW_THR.toFloat(), 0f) / V11_GLOW_SCALE }
-        val hotW = FloatArray(hdr.size) { val o = it - it % 3; kotlin.math.max(minOf(hdr[o], hdr[o + 1], hdr[o + 2]) - V11_BLOOM_THR.toFloat(), 0f) / V11_GLOW_SCALE } // ae-v20
         val surf = Surface.makeRaster(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
         surf.canvas.clear(Color.BLACK)
         val sc = 0.45 * size / 461.0
-        for ((src, k) in listOf(hot to V11_GLOW_K, hotW to V11_BLOOM_K)) {
-            if (k <= 0.0) continue
-            val hotImg = v11ToImage(src, size)
-            for ((ri, rad) in listOf(30.0, 57.0, 80.0, 111.0, 150.0, 200.0).withIndex()) {
-                val sig = (rad * sc / 2.0).toFloat(); val w = (V11_GLOW[ri] * k).toFloat()
-                surf.canvas.drawImage(hotImg, 0f, 0f, Paint().apply {
-                    imageFilter = ImageFilter.makeBlur(sig, sig, FilterTileMode.DECAL)
-                    colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
-                        w, 0f, 0f, 0f, 0f, 0f, w, 0f, 0f, 0f, 0f, 0f, w, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
-                    blendMode = BlendMode.PLUS
-                })
-            }
+        val hotImg = v11ToImage(hot, size)
+        for ((ri, rad) in listOf(30.0, 57.0, 80.0, 111.0, 150.0, 200.0).withIndex()) {
+            val sig = (rad * sc / 2.0).toFloat(); val w = V11_GLOW[ri].toFloat()
+            surf.canvas.drawImage(hotImg, 0f, 0f, Paint().apply {
+                imageFilter = ImageFilter.makeBlur(sig, sig, FilterTileMode.DECAL)
+                colorFilter = org.jetbrains.skia.ColorFilter.makeMatrix(org.jetbrains.skia.ColorMatrix(
+                    w, 0f, 0f, 0f, 0f, 0f, w, 0f, 0f, 0f, 0f, 0f, w, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
+                blendMode = BlendMode.PLUS
+            })
         }
         val bmp = org.jetbrains.skia.Bitmap(); bmp.allocPixels(org.jetbrains.skia.ImageInfo(size, size, org.jetbrains.skia.ColorType.RGBA_F16, org.jetbrains.skia.ColorAlphaType.PREMUL))
         surf.readPixels(bmp, 0, 0)
