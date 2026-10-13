@@ -113,12 +113,12 @@ private class OrbFrame(private val scene: OrbScene) {
 }
 
 private fun DrawScope.drawCoreGlow(radius: Float, time: Float) {
-    val glow = radius * (0.66f + 0.02f * sin(time * 1.3f))
+    val glow = radius * (0.33f + 0.01f * sin(time * 1.3f))
     drawCircle(
         brush = Brush.radialGradient(
-            0f to Color.White,
-            0.12f to Color.White.copy(alpha = 0.92f),
-            0.24f to Color(0xFFF0F8FF).copy(alpha = 0.55f),
+            0f to Color.White.copy(alpha = 0.55f),
+            0.12f to Color.White.copy(alpha = 0.45f),
+            0.24f to Color(0xFFF0F8FF).copy(alpha = 0.3f),
             0.42f to Color(0xFFD0E4FF).copy(alpha = 0.15f),
             0.65f to Color(0xFFB0D0FF).copy(alpha = 0.04f),
             1f to Color.Transparent,

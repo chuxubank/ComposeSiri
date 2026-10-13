@@ -317,7 +317,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val GAIN = 0.24f
         const val CONTAIN_START = 0.72f
         const val CONTAIN_END = 0.92f
-        const val GRAZE_FLOOR = 0.10f
+        const val GRAZE_FLOOR = 0.035f
         const val FOG_FAR = 0.18f
         // After Effects' wiggle(0.2, 15) on the twist and bend angles.
         const val TWIST_SHARPNESS = 3f
