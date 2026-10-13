@@ -56,31 +56,31 @@ internal class Axis(x: Float, y: Float, z: Float) {
 // Spin rates follow the time expressions in the reference After Effects project.
 internal val DefaultPetals = listOf(
     PetalSpec(
-        0.02f, 0.17f, 0.72f, width = 0.80f, length = 0.92f,
+        0.02f, 0.17f, 0.72f, width = 0.90f, length = 1.03f,
         twist = 0.3f, twistOffset = 1.57f, bend = 0.06f,
         spinAxis = Axis(0.3f, 1f, 0.4f), spin = 30f, driftAxis = Axis(1f, 0f, 0.3f), drift = 6f,
         tiltX = 0f, tiltY = 0f, tiltZ = 30f, seed = 0.7f,
     ),
     PetalSpec(
-        0.98f, 0.07f, 0.11f, width = 0.65f, length = 0.88f,
+        0.98f, 0.07f, 0.11f, width = 0.73f, length = 0.99f,
         twist = 0.4f, twistOffset = 0.4f, bend = 0.06f,
         spinAxis = Axis(-0.5f, 0.8f, 0.3f), spin = 45f, driftAxis = Axis(0.2f, 0.3f, 1f), drift = -5f,
         tiltX = 60f, tiltY = 120f, tiltZ = 200f, seed = 1.9f,
     ),
     PetalSpec(
-        0.05f, 0.78f, 1.00f, width = 0.61f, length = 0.88f,
+        0.05f, 0.78f, 1.00f, width = 0.68f, length = 0.99f,
         twist = 0.45f, twistOffset = 2.5f, bend = 0.05f,
         spinAxis = Axis(0.7f, 0.4f, -0.6f), spin = -45f, driftAxis = Axis(0f, 1f, 0.3f), drift = 7f,
         tiltX = 140f, tiltY = 250f, tiltZ = 100f, seed = 3.1f,
     ),
     PetalSpec(
-        0.02f, 0.70f, 0.55f, width = 0.67f, length = 0.88f,
+        0.02f, 0.70f, 0.55f, width = 0.75f, length = 0.99f,
         twist = 0.35f, twistOffset = 1.0f, bend = 0.06f,
         spinAxis = Axis(0.2f, -0.4f, 1f), spin = 80f, driftAxis = Axis(0.8f, 0.5f, 0f), drift = 5f,
         tiltX = 220f, tiltY = 60f, tiltZ = 320f, seed = 4.4f,
     ),
     PetalSpec(
-        0.95f, 0.10f, 0.20f, width = 0.61f, length = 0.88f,
+        0.95f, 0.10f, 0.20f, width = 0.68f, length = 0.99f,
         twist = 0.42f, twistOffset = 2.0f, bend = 0.06f,
         spinAxis = Axis(-0.6f, -0.7f, 0.4f), spin = -30f, driftAxis = Axis(0.4f, 0f, 1f), drift = -6f,
         tiltX = 300f, tiltY = 200f, tiltZ = 60f, seed = 5.6f,
@@ -171,7 +171,10 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
     fun update(time: Float, centerX: Float, centerY: Float, radiusPx: Float) {
         tint.fill(0f)
         for (p in petals.indices) {
-            updatePetal(petals[p], p * verticesPerPetal, time, centerX, centerY, radiusPx)
+            // Deep blue is the first petal. Move only its screen centre toward the lower-left
+            // (screen y grows downward). Its twist, bend, spin and tilt stay as they are.
+            val nudge = if (p == 0) 0.04f * radiusPx else 0f
+            updatePetal(petals[p], p * verticesPerPetal, time, centerX - nudge, centerY + nudge, radiusPx)
         }
         updateRim(centerX, centerY, radiusPx)
     }
