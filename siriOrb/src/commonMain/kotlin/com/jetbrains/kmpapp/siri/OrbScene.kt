@@ -232,7 +232,10 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
                 val reach = (dx * dx + dy * dy) / (radiusPx * radiusPx)
                 // Safety net only: the petals are sized to stay inside, this catches extreme poses.
                 val contain = smoothstep(CONTAIN_END, CONTAIN_START, reach)
-                val intensity = GAIN * alpha * film * fog * contain
+                // Edge factor is 0 on the broad face and 1 on the edge-on blade, so only the fill dims.
+                val edge = ((film - FILM_ON_FACE) / (FILM_ON_BLADE - FILM_ON_FACE)).coerceIn(0f, 1f)
+                val fill = FACE_ALPHA + (1f - FACE_ALPHA) * edge
+                val intensity = GAIN * alpha * fill * film * fog * contain
                 val v = base + k
                 positions[v * 2] = sx
                 positions[v * 2 + 1] = sy
@@ -339,6 +342,11 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val CONTAIN_START = 0.72f
         const val CONTAIN_END = 0.92f
         const val GRAZE_FLOOR = 0.035f
+        // film at a camera-facing surface, and at the edge-on blade (facing == 0).
+        private val FILM_ON_FACE = 1f / sqrt(1f + GRAZE_FLOOR * GRAZE_FLOOR)
+        private val FILM_ON_BLADE = 1f / GRAZE_FLOOR
+        // Face-fill opacity. The blade ramps back to full brightness.
+        const val FACE_ALPHA = 0.88f
         const val FOG_FAR = 0.18f
         const val DEPTH_WHITE = 0.6f
         const val DEPTH_WHITE_END = 0.7f
