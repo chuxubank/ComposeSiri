@@ -230,7 +230,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
                 val v = base + k
                 positions[v * 2] = sx
                 positions[v * 2 + 1] = sy
-                // Petals only whiten when they cross the front/centre; beyond 0.45R they keep pure colour.
+                // Petals only whiten when they cross the front/centre; beyond 0.5R they keep pure colour.
                 val d = sqrt(reach)
                 val white = DEPTH_WHITE * (1 - smoothstep(0f, DEPTH_WHITE_END, d))
                 val r0 = spec.red * intensity
@@ -334,8 +334,8 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val CONTAIN_END = 0.92f
         const val GRAZE_FLOOR = 0.035f
         const val FOG_FAR = 0.18f
-        const val DEPTH_WHITE = 0.85f
-        const val DEPTH_WHITE_END = 0.45f
+        const val DEPTH_WHITE = 0.6f
+        const val DEPTH_WHITE_END = 0.5f
         // After Effects' wiggle(0.2, 15) on the twist and bend angles.
         const val TWIST_SHARPNESS = 3f
         const val TWIST_WIGGLE = 0.15f
