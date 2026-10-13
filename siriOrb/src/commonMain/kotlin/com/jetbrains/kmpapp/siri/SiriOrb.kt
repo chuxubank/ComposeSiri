@@ -116,8 +116,8 @@ private fun DrawScope.drawCoreGlow(radius: Float, time: Float) {
     val glow = radius * (0.33f + 0.01f * sin(time * 1.3f))
     drawCircle(
         brush = Brush.radialGradient(
-            0f to Color.White.copy(alpha = 0.65f),
-            0.12f to Color.White.copy(alpha = 0.6f),
+            0f to Color.White.copy(alpha = 0.5f),
+            0.12f to Color.White.copy(alpha = 0.45f),
             0.24f to Color(0xFFF0F8FF).copy(alpha = 0.4f),
             0.42f to Color(0xFFD0E4FF).copy(alpha = 0.15f),
             0.65f to Color(0xFFB0D0FF).copy(alpha = 0.04f),
