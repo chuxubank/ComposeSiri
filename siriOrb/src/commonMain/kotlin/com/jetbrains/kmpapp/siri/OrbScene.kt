@@ -348,7 +348,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         // Face-fill opacity. The blade ramps back to full brightness.
         const val FACE_ALPHA = 0.88f
         const val FOG_FAR = 0.18f
-        const val DEPTH_WHITE = 0.5f
+        const val DEPTH_WHITE = 0.6f
         const val DEPTH_WHITE_END = 0.7f
         // After Effects' wiggle(0.2, 15) on the twist and bend angles.
         const val TWIST_SHARPNESS = 3f
