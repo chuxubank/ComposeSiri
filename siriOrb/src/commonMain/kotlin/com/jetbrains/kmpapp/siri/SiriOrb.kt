@@ -64,7 +64,6 @@ fun SiriOrb(time: () -> Float, modifier: Modifier = Modifier) {
         ) {
             val t = time()
             frame.prepare(this, t)
-            drawBlueBase(frame.radius)
             frame.drawPetals(this)
             frame.drawRim(this)
             drawCoreGlow(frame.radius, t)
@@ -75,9 +74,6 @@ fun SiriOrb(time: () -> Float, modifier: Modifier = Modifier) {
 private const val ORB_RADIUS = 0.46f
 private const val BLOOM_RADIUS = 0.035f
 private const val BLOOM_STRENGTH = 0.45f
-private const val BLUE_BASE_OFFSET = 0.4f
-private const val BLUE_BASE_RADIUS = 0.85f
-private val BlueBase = Color(red = 0.02f, green = 0.17f, blue = 0.72f, alpha = 0.32f)
 
 /** Shares one scene update between the bloom and sharp passes of a frame. */
 private class OrbFrame(private val scene: OrbScene) {
@@ -130,26 +126,6 @@ private fun DrawScope.drawCoreGlow(radius: Float, time: Float) {
             radius = glow,
         ),
         radius = glow,
-        blendMode = BlendMode.Plus,
-    )
-}
-
-/**
- * A still, deep-blue wash over the lower-left half of the orb, as in the reference, where the
- * blue backdrop petal alone spins away and leaves that side dark. Same hue as the backdrop petal.
- */
-private fun DrawScope.drawBlueBase(radius: Float) {
-    val c = center + Offset(-BLUE_BASE_OFFSET * radius, BLUE_BASE_OFFSET * radius)
-    drawCircle(
-        brush = Brush.radialGradient(
-            0f to BlueBase,
-            0.55f to BlueBase.copy(alpha = 0.6f),
-            1f to Color.Transparent,
-            center = c,
-            radius = radius * BLUE_BASE_RADIUS,
-        ),
-        radius = radius * 0.98f,
-        center = center,
         blendMode = BlendMode.Plus,
     )
 }
