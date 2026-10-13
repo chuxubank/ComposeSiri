@@ -57,31 +57,31 @@ internal class Axis(x: Float, y: Float, z: Float) {
 internal val DefaultPetals = listOf(
     PetalSpec(
         0.02f, 0.17f, 0.72f, width = 0.80f, length = 0.92f,
-        twist = 0.6f, twistOffset = 1.57f, bend = 0.06f,
+        twist = 0.3f, twistOffset = 1.57f, bend = 0.06f,
         spinAxis = Axis(0.3f, 1f, 0.4f), spin = 30f, driftAxis = Axis(1f, 0f, 0.3f), drift = 6f,
         tiltX = 0f, tiltY = 0f, tiltZ = 30f, seed = 0.7f,
     ),
     PetalSpec(
         0.98f, 0.07f, 0.11f, width = 0.65f, length = 0.88f,
-        twist = 0.8f, twistOffset = 0.4f, bend = 0.06f,
+        twist = 0.4f, twistOffset = 0.4f, bend = 0.06f,
         spinAxis = Axis(-0.5f, 0.8f, 0.3f), spin = 45f, driftAxis = Axis(0.2f, 0.3f, 1f), drift = -5f,
         tiltX = 60f, tiltY = 120f, tiltZ = 200f, seed = 1.9f,
     ),
     PetalSpec(
         0.05f, 0.78f, 1.00f, width = 0.61f, length = 0.88f,
-        twist = 0.9f, twistOffset = 2.5f, bend = 0.05f,
+        twist = 0.45f, twistOffset = 2.5f, bend = 0.05f,
         spinAxis = Axis(0.7f, 0.4f, -0.6f), spin = -45f, driftAxis = Axis(0f, 1f, 0.3f), drift = 7f,
         tiltX = 140f, tiltY = 250f, tiltZ = 100f, seed = 3.1f,
     ),
     PetalSpec(
         0.02f, 0.70f, 0.55f, width = 0.67f, length = 0.88f,
-        twist = 0.7f, twistOffset = 1.0f, bend = 0.06f,
+        twist = 0.35f, twistOffset = 1.0f, bend = 0.06f,
         spinAxis = Axis(0.2f, -0.4f, 1f), spin = 80f, driftAxis = Axis(0.8f, 0.5f, 0f), drift = 5f,
         tiltX = 220f, tiltY = 60f, tiltZ = 320f, seed = 4.4f,
     ),
     PetalSpec(
         0.95f, 0.10f, 0.20f, width = 0.61f, length = 0.88f,
-        twist = 0.85f, twistOffset = 2.0f, bend = 0.06f,
+        twist = 0.42f, twistOffset = 2.0f, bend = 0.06f,
         spinAxis = Axis(-0.6f, -0.7f, 0.4f), spin = -30f, driftAxis = Axis(0.4f, 0f, 1f), drift = -6f,
         tiltX = 300f, tiltY = 200f, tiltZ = 60f, seed = 5.6f,
     ),
@@ -320,7 +320,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val GRAZE_FLOOR = 0.10f
         const val FOG_FAR = 0.18f
         // After Effects' wiggle(0.2, 15) on the twist and bend angles.
-        const val TWIST_SHARPNESS = 8f
+        const val TWIST_SHARPNESS = 3f
         const val TWIST_WIGGLE = 0.15f
         const val BEND_WIGGLE = 0.05f
         const val WIGGLE_HZ = 0.2f
