@@ -275,13 +275,21 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
                 val tr = (tint[b0 * 3] * (1 - f) + tint[b1 * 3] * f) / peak
                 val tg = (tint[b0 * 3 + 1] * (1 - f) + tint[b1 * 3 + 1] * f) / peak
                 val tb = (tint[b0 * 3 + 2] * (1 - f) + tint[b1 * 3 + 2] * f) / peak
+                // y points down (cy + sin * radius), so +sin puts u = 0 at the upper-left.
+                val u = 0.5f + 0.5f * (cos(angle) + sin(angle)) / sqrt(2f)
+                val gr = RIM_UL_R + (RIM_LR_R - RIM_UL_R) * u
+                val gg = RIM_UL_G + (RIM_LR_G - RIM_UL_G) * u
+                val gb = RIM_UL_B + (RIM_LR_B - RIM_UL_B) * u
+                val rr = RIM_TINT_MIX * gr + (1f - RIM_TINT_MIX) * tr
+                val rg = RIM_TINT_MIX * gg + (1f - RIM_TINT_MIX) * tg
+                val rb = RIM_TINT_MIX * gb + (1f - RIM_TINT_MIX) * tb
                 val v = petalVertexCount + ring * rimSegments + s
                 positions[v * 2] = cx + cos(angle) * radius
                 positions[v * 2 + 1] = cy + sin(angle) * radius
                 colors[v] = toneMap(
-                    (RIM_BASE_R + tr) * k,
-                    (RIM_BASE_G + tg) * k,
-                    (RIM_BASE_B + tb) * k,
+                    (RIM_BASE_R + rr) * k,
+                    (RIM_BASE_G + rg) * k,
+                    (RIM_BASE_B + rb) * k,
                 )
             }
         }
@@ -337,6 +345,14 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val RIM_BASE_R = 0.015f
         const val RIM_BASE_G = 0.018f
         const val RIM_BASE_B = 0.032f
+        const val RIM_TINT_MIX = 0.7f
+        // Diagonal glass tint: upper-left #FF3B5C to lower-right #3B7BFF.
+        const val RIM_UL_R = 1f
+        const val RIM_UL_G = 0.23f
+        const val RIM_UL_B = 0.36f
+        const val RIM_LR_R = 0.23f
+        const val RIM_LR_G = 0.48f
+        const val RIM_LR_B = 1f
     }
 }
 
