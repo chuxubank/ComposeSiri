@@ -44,8 +44,6 @@ internal class PetalSpec(
     val tiltY: Float,
     val tiltZ: Float,
     val seed: Float,
-    /** Multiplier on the packed vertex-colour alpha. 1 leaves the petal fully opaque. */
-    val alpha: Float = 1f,
 )
 
 internal class Axis(x: Float, y: Float, z: Float) {
@@ -61,7 +59,7 @@ internal val DefaultPetals = listOf(
         0.02f, 0.17f, 0.72f, width = 0.86f, length = 0.99f,
         twist = 0.3f, twistOffset = 1.57f, bend = 0.06f,
         spinAxis = Axis(0.3f, 1f, 0.4f), spin = 30f, driftAxis = Axis(1f, 0f, 0.3f), drift = 6f,
-        tiltX = 0f, tiltY = 0f, tiltZ = 30f, seed = 0.7f, alpha = 0.85f,
+        tiltX = 0f, tiltY = 0f, tiltZ = 30f, seed = 0.7f,
     ),
     PetalSpec(
         0.98f, 0.07f, 0.11f, width = 0.70f, length = 0.95f,
@@ -242,12 +240,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
                 val g0 = spec.green * intensity
                 val b0 = spec.blue * intensity
                 val peak = max(r0, max(g0, b0))
-                colors[v] = toneMap(
-                    r0 + (peak - r0) * white,
-                    g0 + (peak - g0) * white,
-                    b0 + (peak - b0) * white,
-                    spec.alpha,
-                )
+                colors[v] = toneMap(r0 + (peak - r0) * white, g0 + (peak - g0) * white, b0 + (peak - b0) * white)
 
                 var bin = ((atan2(dy, dx) / (2f * PI.toFloat()) + 0.5f) * tintBins).toInt()
                 if (bin >= tintBins) bin = tintBins - 1
@@ -402,12 +395,12 @@ private fun wiggle(time: Float, frequency: Float, seed: Float): Float {
 }
 
 /** Film-like response: bright overlaps roll off towards white instead of clipping per channel. */
-private fun toneMap(r: Float, g: Float, b: Float, alpha: Float = 1f): Int {
+private fun toneMap(r: Float, g: Float, b: Float): Int {
     val spill = max(0f, max(r, max(g, b)) - 1.6f) * 0.25f
     val tr = 1f - exp(-(r + spill))
     val tg = 1f - exp(-(g + spill))
     val tb = 1f - exp(-(b + spill))
-    return (min(255f, alpha * 255f + 0.5f).toInt() shl 24) or
+    return (0xFF shl 24) or
         (min(255f, tr * 255f + 0.5f).toInt() shl 16) or
         (min(255f, tg * 255f + 0.5f).toInt() shl 8) or
         min(255f, tb * 255f + 0.5f).toInt()
