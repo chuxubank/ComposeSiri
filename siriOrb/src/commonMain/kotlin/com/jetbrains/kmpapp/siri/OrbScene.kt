@@ -44,6 +44,8 @@ internal class PetalSpec(
     val tiltY: Float,
     val tiltZ: Float,
     val seed: Float,
+    /** Starting angle around [spinAxis], in degrees. */
+    val spinPhase: Float = 0f,
 )
 
 internal class Axis(x: Float, y: Float, z: Float) {
@@ -60,6 +62,7 @@ internal val DefaultPetals = listOf(
         twist = 0.3f, twistOffset = 1.57f, bend = 0.06f,
         spinAxis = Axis(0.3f, 1f, 0.4f), spin = 30f, driftAxis = Axis(1f, 0f, 0.3f), drift = 6f,
         tiltX = 0f, tiltY = 0f, tiltZ = 30f, seed = 0.7f,
+        spinPhase = 90f,
     ),
     PetalSpec(
         0.98f, 0.07f, 0.11f, width = 0.70f, length = 0.95f,
@@ -325,7 +328,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         multiply(ma, mc, mb)
         axisAngle(spec.driftAxis, spec.drift * time * toRad, ma)
         multiply(ma, mb, mc)
-        axisAngle(spec.spinAxis, spec.spin * time * toRad, ma)
+        axisAngle(spec.spinAxis, (spec.spin * time + spec.spinPhase) * toRad, ma)
         multiply(ma, mc, m)
     }
 
