@@ -230,12 +230,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
                 val v = base + k
                 positions[v * 2] = sx
                 positions[v * 2 + 1] = sy
-                // Edge-on blades go towards white (the reference star); faces keep their colour.
-                // facing < BLADE_FACING keeps the band under ~0.03R wide on screen.
-                val white = BLADE_WHITE * (1f - smoothstep(0f, BLADE_FACING, facing))
-                val r0 = spec.red * intensity; val g0 = spec.green * intensity; val b0 = spec.blue * intensity
-                val peak = max(r0, max(g0, b0)) * (1f + BLADE_BOOST * white)
-                colors[v] = toneMap(r0 + (peak - r0) * white, g0 + (peak - g0) * white, b0 + (peak - b0) * white)
+                colors[v] = toneMap(spec.red * intensity, spec.green * intensity, spec.blue * intensity)
 
                 var bin = ((atan2(dy, dx) / (2f * PI.toFloat()) + 0.5f) * tintBins).toInt()
                 if (bin >= tintBins) bin = tintBins - 1
@@ -323,10 +318,6 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val CONTAIN_START = 0.72f
         const val CONTAIN_END = 0.92f
         const val GRAZE_FLOOR = 0.035f
-        const val BLADE_WHITE = 0.8f
-        const val BLADE_FACING = 0.1f
-        // Extra brightness inside the blade band only; the faces are untouched (white = 0 there).
-        const val BLADE_BOOST = 2.5f
         const val FOG_FAR = 0.18f
         // After Effects' wiggle(0.2, 15) on the twist and bend angles.
         const val TWIST_SHARPNESS = 3f
