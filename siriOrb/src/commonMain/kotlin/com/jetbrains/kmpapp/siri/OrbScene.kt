@@ -63,34 +63,34 @@ internal class Axis(x: Float, y: Float, z: Float) {
 // Spin rates follow the time expressions in the reference After Effects project, scaled by TEMPO.
 internal val DefaultPetals = listOf(
     PetalSpec(
-        0.22f, 0.78f, 0.48f, width = 0.74f, length = 0.68f,
+        0.22f, 0.78f, 0.48f, width = 0.87f, length = 0.80f,
         twist = 0.3f, twistOffset = 1.57f, bend = 0.06f,
         spinAxis = Axis(0.3f, 1f, 0.4f), spin = 30f, driftAxis = Axis(1f, 0f, 0.3f), drift = 6f,
         tiltX = 0f, tiltY = 0f, tiltZ = 30f, seed = 0.7f,
         spinPhase = 90f, shift = 0.26f,
     ),
     PetalSpec(
-        0.95f, 0.22f, 0.32f, width = 0.68f, length = 0.64f,
+        0.95f, 0.22f, 0.32f, width = 0.80f, length = 0.76f,
         twist = 0.4f, twistOffset = 0.4f, bend = 0.06f,
         spinAxis = Axis(-0.5f, 0.8f, 0.3f), spin = 45f, driftAxis = Axis(0.2f, 0.3f, 1f), drift = -5f,
         tiltX = 60f, tiltY = 120f, tiltZ = 200f, seed = 1.9f,
         shift = 0.26f,
     ),
     PetalSpec(
-        0.18f, 0.42f, 0.85f, width = 0.72f, length = 0.91f,
+        0.18f, 0.42f, 0.85f, width = 0.85f, length = 1.07f,
         twist = 0.45f, twistOffset = 2.5f, bend = 0.05f,
         spinAxis = Axis(0.7f, 0.4f, -0.6f), spin = -45f, driftAxis = Axis(0f, 1f, 0.3f), drift = 7f,
         tiltX = 140f, tiltY = 250f, tiltZ = 100f, seed = 3.1f,
     ),
     PetalSpec(
-        0.13f, 0.58f, 0.75f, width = 0.6f, length = 0.62f,
+        0.13f, 0.58f, 0.75f, width = 0.71f, length = 0.73f,
         twist = 0.35f, twistOffset = 1.0f, bend = 0.06f,
         spinAxis = Axis(0.2f, -0.4f, 1f), spin = 80f, driftAxis = Axis(0.8f, 0.5f, 0f), drift = 5f,
         tiltX = 220f, tiltY = 60f, tiltZ = 320f, seed = 4.4f,
         shift = 0.24f,
     ),
     PetalSpec(
-        0.30f, 0.80f, 0.55f, width = 0.66f, length = 0.64f,
+        0.30f, 0.80f, 0.55f, width = 0.78f, length = 0.76f,
         twist = 0.42f, twistOffset = 2.0f, bend = 0.06f,
         spinAxis = Axis(-0.6f, -0.7f, 0.4f), spin = -30f, driftAxis = Axis(0.4f, 0f, 1f), drift = -6f,
         tiltX = 300f, tiltY = 200f, tiltZ = 60f, seed = 5.6f,
@@ -106,10 +106,10 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
     private val petalVertexCount = petals.size * verticesPerPetal
 
     private val rimSegments = 120
-    // The glass: a faint haze over the whole disc that thickens into a wide, soft inner rim and
+    // The glass: a colour-filled haze over the whole disc that thickens into a wide, soft inner rim and
     // ends in a crisp edge.
-    private val rimRadii = floatArrayOf(0f, 0.35f, 0.6f, 0.75f, 0.85f, 0.91f, 0.95f, 0.975f, 0.99f, 1.0f, 1.015f, 1.05f)
-    private val rimProfile = floatArrayOf(0.22f, 0.25f, 0.31f, 0.4f, 0.53f, 0.66f, 0.8f, 0.93f, 1f, 0.92f, 0.3f, 0f)
+    private val rimRadii = floatArrayOf(0f, 0.35f, 0.6f, 0.75f, 0.85f, 0.91f, 0.95f, 0.975f, 0.99f, 1.0f, 1.006f, 1.02f)
+    private val rimProfile = floatArrayOf(0.3f, 0.33f, 0.4f, 0.5f, 0.62f, 0.74f, 0.85f, 0.94f, 1f, 0.95f, 0.12f, 0f)
     private val rimVertexCount = rimSegments * rimRadii.size
 
     val vertexCount = petalVertexCount + rimVertexCount
@@ -187,7 +187,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         for (p in petals.indices) {
             updatePetal(petals[p], p * verticesPerPetal, time, centerX, centerY, radiusPx)
         }
-        updateRim(centerX, centerY, radiusPx)
+        updateRim(time, centerX, centerY, radiusPx)
     }
 
     private fun updatePetal(
@@ -264,7 +264,7 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         }
     }
 
-    private fun updateRim(cx: Float, cy: Float, radiusPx: Float) {
+    private fun updateRim(time: Float, cx: Float, cy: Float, radiusPx: Float) {
         repeat(2) {
             for (i in 0 until tintBins) {
                 val l = (i + tintBins - 1) % tintBins
@@ -298,9 +298,12 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
                 val rr = RIM_TINT_MIX * gr + (1f - RIM_TINT_MIX) * tr
                 val rg = RIM_TINT_MIX * gg + (1f - RIM_TINT_MIX) * tg
                 val rb = RIM_TINT_MIX * gb + (1f - RIM_TINT_MIX) * tb
+                val wobble = 1f + 0.014f * sin(2f * angle + time * 0.9f) +
+                    0.009f * sin(3f * angle - time * 1.3f + 1.1f) +
+                    0.006f * sin(5f * angle + time * 0.6f + 2.3f)
                 val v = petalVertexCount + ring * rimSegments + s
-                positions[v * 2] = cx + cos(angle) * radius
-                positions[v * 2 + 1] = cy + sin(angle) * radius
+                positions[v * 2] = cx + cos(angle) * radius * wobble
+                positions[v * 2 + 1] = cy + sin(angle) * radius * wobble
                 colors[v] = toneMap(
                     (RIM_BASE_R + rr) * k,
                     (RIM_BASE_G + rg) * k,
@@ -347,8 +350,8 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         // The iOS 27 orb turns at about a third of the rate of the After Effects project.
         const val TEMPO = 0.28f
         const val GAIN = 0.36f
-        const val CONTAIN_START = 0.72f
-        const val CONTAIN_END = 0.92f
+        const val CONTAIN_START = 0.8f
+        const val CONTAIN_END = 0.98f
         const val GRAZE_FLOOR = 0.35f
         const val FOG_FAR = 0.18f
         const val DEPTH_WHITE = 0.2f
@@ -358,11 +361,11 @@ internal class OrbScene(private val petals: List<PetalSpec> = DefaultPetals) {
         const val TWIST_WIGGLE = 0.15f
         const val BEND_WIGGLE = 0.05f
         const val WIGGLE_HZ = 0.2f
-        const val RIM_GAIN = 0.36f
+        const val RIM_GAIN = 0.44f
         const val RIM_BASE_R = 0.12f
         const val RIM_BASE_G = 0.21f
         const val RIM_BASE_B = 0.22f
-        const val RIM_TINT_MIX = 0.25f
+        const val RIM_TINT_MIX = 0.4f
         // Diagonal glass tint: upper-left #FF3B5C to lower-right #3B7BFF.
         const val RIM_UL_R = 1f
         const val RIM_UL_G = 0.23f
