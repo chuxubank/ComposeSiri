@@ -55,6 +55,7 @@ fun SiriOrb(time: () -> Float, modifier: Modifier = Modifier) {
         ) {
             frame.prepare(this, time())
             frame.drawPetals(this)
+            frame.drawRim(this)
         }
         Canvas(
             Modifier.matchParentSize().graphicsLayer {
@@ -66,6 +67,7 @@ fun SiriOrb(time: () -> Float, modifier: Modifier = Modifier) {
             frame.prepare(this, t)
             frame.drawPetals(this)
             frame.drawRim(this)
+            drawHalo(frame.radius)
             drawCoreGlow(frame.radius, t)
         }
     }
@@ -112,15 +114,34 @@ private class OrbFrame(private val scene: OrbScene) {
     }
 }
 
-private fun DrawScope.drawCoreGlow(radius: Float, time: Float) {
-    val glow = radius * (0.33f + 0.01f * sin(time * 1.3f))
+/** Light scattered just outside the glass edge. */
+private fun DrawScope.drawHalo(radius: Float) {
+    val halo = radius * 1.12f
+    val halation = Color(0xFF7FA6BF)
     drawCircle(
         brush = Brush.radialGradient(
-            0f to Color.White.copy(alpha = 0.5f),
-            0.12f to Color.White.copy(alpha = 0.45f),
-            0.24f to Color(0xFFF0F8FF).copy(alpha = 0.4f),
-            0.42f to Color(0xFFD0E4FF).copy(alpha = 0.15f),
-            0.65f to Color(0xFFB0D0FF).copy(alpha = 0.04f),
+            0.86f to Color.Transparent,
+            0.9f to halation.copy(alpha = 0.11f),
+            0.94f to halation.copy(alpha = 0.05f),
+            0.97f to halation.copy(alpha = 0.02f),
+            1f to Color.Transparent,
+            center = center,
+            radius = halo,
+        ),
+        radius = halo,
+        blendMode = BlendMode.Plus,
+    )
+}
+
+private fun DrawScope.drawCoreGlow(radius: Float, time: Float) {
+    val glow = radius * (0.42f + 0.012f * sin(time * 1.3f))
+    drawCircle(
+        brush = Brush.radialGradient(
+            0f to Color.White,
+            0.2f to Color.White.copy(alpha = 0.95f),
+            0.32f to Color(0xFFE6F8FF).copy(alpha = 0.7f),
+            0.5f to Color(0xFFC4E6FF).copy(alpha = 0.3f),
+            0.72f to Color(0xFFA8D4FF).copy(alpha = 0.08f),
             1f to Color.Transparent,
             center = center,
             radius = glow,
