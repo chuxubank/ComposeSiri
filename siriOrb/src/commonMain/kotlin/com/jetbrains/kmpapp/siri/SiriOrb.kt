@@ -44,8 +44,9 @@ fun SiriOrb(modifier: Modifier = Modifier) {
 fun SiriOrb(time: () -> Float, modifier: Modifier = Modifier) {
     val frame = remember { OrbFrame(OrbScene()) }
     Box(modifier) {
-        // Bloom: the same petals, blurred, under the sharp pass. Platforms without blur support
-        // (Android before 12) simply draw the orb without it.
+        // Soft internal bloom on the petals only, so the interior veils blend smoothly while the
+        // outer glass shell keeps a crisp, non-circular contour. Platforms without blur support
+        // (Android before 12) skip the blur effect gracefully.
         Canvas(
             Modifier.matchParentSize().graphicsLayer {
                 val blur = min(size.width, size.height) * BLOOM_RADIUS
@@ -55,7 +56,6 @@ fun SiriOrb(time: () -> Float, modifier: Modifier = Modifier) {
         ) {
             frame.prepare(this, time())
             frame.drawPetals(this)
-            frame.drawRim(this)
         }
         Canvas(
             Modifier.matchParentSize().graphicsLayer {
@@ -67,15 +67,14 @@ fun SiriOrb(time: () -> Float, modifier: Modifier = Modifier) {
             frame.prepare(this, t)
             frame.drawPetals(this)
             frame.drawRim(this)
-            drawHalo(frame.radius)
             drawCoreGlow(frame.radius, t)
         }
     }
 }
 
 private const val ORB_RADIUS = 0.46f
-private const val BLOOM_RADIUS = 0.035f
-private const val BLOOM_STRENGTH = 0.45f
+private const val BLOOM_RADIUS = 0.032f
+private const val BLOOM_STRENGTH = 0.48f
 
 /** Shares one scene update between the bloom and sharp passes of a frame. */
 private class OrbFrame(private val scene: OrbScene) {
@@ -114,34 +113,15 @@ private class OrbFrame(private val scene: OrbScene) {
     }
 }
 
-/** Light scattered just outside the glass edge. */
-private fun DrawScope.drawHalo(radius: Float) {
-    val halo = radius * 1.12f
-    val halation = Color(0xFF7FA6BF)
-    drawCircle(
-        brush = Brush.radialGradient(
-            0.86f to Color.Transparent,
-            0.9f to halation.copy(alpha = 0.11f),
-            0.94f to halation.copy(alpha = 0.05f),
-            0.97f to halation.copy(alpha = 0.02f),
-            1f to Color.Transparent,
-            center = center,
-            radius = halo,
-        ),
-        radius = halo,
-        blendMode = BlendMode.Plus,
-    )
-}
-
 private fun DrawScope.drawCoreGlow(radius: Float, time: Float) {
-    val glow = radius * (0.42f + 0.012f * sin(time * 1.3f))
+    val glow = radius * (0.37f + 0.010f * sin(time * 1.3f))
     drawCircle(
         brush = Brush.radialGradient(
             0f to Color.White,
-            0.2f to Color.White.copy(alpha = 0.95f),
-            0.32f to Color(0xFFE6F8FF).copy(alpha = 0.7f),
-            0.5f to Color(0xFFC4E6FF).copy(alpha = 0.3f),
-            0.72f to Color(0xFFA8D4FF).copy(alpha = 0.08f),
+            0.18f to Color.White.copy(alpha = 0.92f),
+            0.32f to Color(0xFFE8F6FF).copy(alpha = 0.62f),
+            0.52f to Color(0xFFC4E4FF).copy(alpha = 0.24f),
+            0.74f to Color(0xFFA4CEFF).copy(alpha = 0.06f),
             1f to Color.Transparent,
             center = center,
             radius = glow,
